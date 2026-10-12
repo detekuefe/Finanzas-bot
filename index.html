@@ -42,7 +42,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,th:focus-visible{outli
 @media (max-width:900px){.grid2{grid-template-columns:minmax(0,1fr)}}
 .num{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
-.tablebox{overflow-x:auto}
+.tablebox{overflow-x:auto}.btin{display:none}@media (max-width:700px){.btcol{display:none}.btin{display:block;margin-top:6px;text-align:left}.btin .num{font-weight:600}}
 table{border-collapse:collapse;width:100%;font-size:.85rem}
 th,td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
 th:first-child,td:first-child{text-align:left}
@@ -305,10 +305,10 @@ function renderSignals(view){
     ${al.length?`<div class="alerts">${al.map(a=>`<a class="alert ${a.s.code==='buy_new'?'a-buy':'a-sell'}" href="#${a.t}"><span><b>${a.t}</b> ${STRAT[a.k]}: <b>${a.s.code==='buy_new'?'COMPRA':'VENTA'}</b></span><span class="rb">${esc(a.s.detail)}</span></a>`).join('')}</div>`:'<p class="muted" style="margin:0">No hay señales nuevas de compra ni de venta.</p>'}
   </section>
   <section class="panel"><h2>Estado de cada análisis</h2><p class="sub">Backtest de ${SIG.tickers[tks[0]]?fdate(SIG.tickers[tks[0]].from):''} a ${SIG.tickers[tks[0]]?fdate(SIG.tickers[tks[0]].to):''}: retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H). Clic en una fila para ver el detalle.</p>
-  <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Ichimoku</th><th>Backtest Ichimoku</th><th style="text-align:left">EMA 9/18 vs SMA 30</th><th>Backtest medias</th></tr></thead><tbody>
+  <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Ichimoku</th><th class="btcol">Backtest Ichimoku</th><th style="text-align:left">EMA 9/18 vs SMA 30</th><th class="btcol">Backtest medias</th></tr></thead><tbody>
   ${rows.map(t=>{const v=SIG.tickers[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t]||'')}</span></td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.ichimoku.state)}<span class="rb">${esc(v.ichimoku.state.detail)}</span></td><td>${btCell(v.ichimoku.bt)}</td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.medias.state)}<span class="rb">${esc(v.medias.state.detail)}</span></td><td>${btCell(v.medias.bt)}</td></tr>`}).join('')}
+    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.ichimoku.state)}<span class="rb">${esc(v.ichimoku.state.detail)}</span><div class="btin">${btCell(v.ichimoku.bt)}</div></td><td class="btcol">${btCell(v.ichimoku.bt)}</td>
+    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.medias.state)}<span class="rb">${esc(v.medias.state.detail)}</span><div class="btin">${btCell(v.medias.bt)}</div></td><td class="btcol">${btCell(v.medias.bt)}</td></tr>`}).join('')}
   </tbody></table></div>
   ${missing.length?`<p class="note">Sin historia suficiente para las estrategias: ${missing.join(', ')}.</p>`:''}
   <p class="note"><b>Ichimoku:</b> ${esc(SIG.rules.ichimoku)}<br><b>Medias:</b> ${esc(SIG.rules.medias)}<br><b>Backtest:</b> ${esc(SIG.rules.backtest)}</p></section>`;
