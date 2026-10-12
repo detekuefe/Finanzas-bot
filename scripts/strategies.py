@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 COST = 0.0005
 RECENT = 3  # sesiones en que una señal se considera "nueva"
+WINDOWS = (6, 12, 18, 24)  # meses de backtest
 
 TICKERS = ["QQQ", "NVDA", "AMD", "INTC", "MU", "SNDK", "WDC", "STX", "NTAP", "DELL",
            "FLEX", "AEHR", "AXTI", "DDOG", "ASTS", "LUNR", "SPCX", "HYMC", "MP"]
@@ -161,6 +162,30 @@ def backtest(bars, sig):
     }, equity, events
 
 
+def months_ago(d, n):
+    y, m, day = map(int, d[:10].split("-"))
+    m -= n
+    while m <= 0:
+        m, y = m + 12, y - 1
+    return f"{y:04d}-{m:02d}-{min(day, 28):02d}" if day > 28 else f"{y:04d}-{m:02d}-{day:02d}"
+
+
+def windows(bars, sig):
+    """Backtest de los últimos N meses. Los indicadores usan toda la historia;
+    la cuenta parte sin posición en el primer día de la ventana."""
+    out = {}
+    for n in WINDOWS:
+        start = months_ago(bars[-1][0], n)
+        i = next((k for k, b in enumerate(bars) if b[0] >= start), 0)
+        if i == 0 and date.fromisoformat(bars[0][0][:10]) > date.fromisoformat(start) + timedelta(days=10):
+            continue  # no hay historia suficiente para esa ventana
+        st, _, _ = backtest(bars[i:], sig[i:])
+        st.pop("list")
+        st["from"] = bars[i][0]
+        out[f"{n}m"] = st
+    return out
+
+
 def state(bars, sig, why, bt, events):
     """Estado actual para las alertas."""
     n = len(bars)
@@ -205,7 +230,7 @@ def main():
     out = {"rules": {
         "ichimoku": "Compra cuando el cierre está sobre la nube, Tenkan sobre Kijun y el cierre supera al de hace 26 sesiones. Venta cuando el cierre cae bajo la nube o Tenkan cruza bajo Kijun.",
         "medias": "Compra cuando la EMA 9 y la EMA 18 quedan ambas sobre la SMA 30. Venta cuando ambas quedan bajo la SMA 30.",
-        "backtest": "Velas diarias, solo compras, todo el capital por operación. Señal al cierre, ejecución en la apertura siguiente. Costo 0,05% por lado.",
+        "backtest": "Velas diarias, solo compras, todo el capital por operación. Señal al cierre, ejecución en la apertura siguiente. Costo 0,05% por lado. Cada período parte sin posición en su primer día; los indicadores usan toda la historia.",
     }, "tickers": {}}
     for t in TICKERS:
         try:
@@ -220,8 +245,8 @@ def main():
         bti, eqi, evi = backtest(bars, si)
         btm, eqm, evm = backtest(bars, sm)
         out["tickers"][t] = {
-            "ichimoku": {"state": state(bars, si, wi, bti, evi), "bt": {k: v for k, v in bti.items() if k != "list"}},
-            "medias": {"state": state(bars, sm, wm, btm, evm), "bt": {k: v for k, v in btm.items() if k != "list"}},
+            "ichimoku": {"state": state(bars, si, wi, bti, evi), "bt": {k: v for k, v in bti.items() if k != "list"}, "bts": windows(bars, si)},
+            "medias": {"state": state(bars, sm, wm, btm, evm), "bt": {k: v for k, v in btm.items() if k != "list"}, "bts": windows(bars, sm)},
             "from": bars[0][0], "to": bars[-1][0],
         }
         dates = [b[0] for b in bars]

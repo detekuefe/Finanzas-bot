@@ -286,6 +286,9 @@ async function renderAsset(view,t){
 
 // ---------- Estrategias: alertas y backtesting ----------
 let SIG=null;const cacheS={};
+const WINS=[['6m','6 meses'],['12m','12 meses'],['18m','18 meses'],['24m','24 meses']];
+let btWin='24m';try{const w=localStorage.getItem('btWin');if(WINS.some(x=>x[0]===w))btWin=w}catch(e){}
+const btOf=x=>(x.bts||{})[btWin]||null;
 const STRAT={ichimoku:'Ichimoku',medias:'EMA 9/18 vs SMA 30'};
 const SIGTXT={buy_new:['COMPRA','sig-buy'],sell_new:['VENTA','sig-sell'],buy_recent:['Compra reciente','sig-long'],sell_recent:['Venta reciente','sig-flat'],long:['Comprado','sig-long'],flat:['Fuera','sig-flat']};
 const sigPill=s=>{const [l,c]=SIGTXT[s.code]||['–','sig-flat'];return`<span class="sig ${c}">${l}</span>`};
@@ -297,22 +300,23 @@ function renderSignals(view){
   if(!SIG){view.innerHTML='<p class="empty">Aún no hay señales calculadas. Se generan con la próxima actualización de datos.</p>';return}
   const al=newAlerts();const tks=ORDER.filter(t=>SIG.tickers[t]);const missing=ORDER.filter(t=>!SIG.tickers[t]);
   const rows=[...tks].sort((a,b)=>Math.min(sigRank(SIG.tickers[a].ichimoku.state.code),sigRank(SIG.tickers[a].medias.state.code))-Math.min(sigRank(SIG.tickers[b].ichimoku.state.code),sigRank(SIG.tickers[b].medias.state.code)));
-  const btCell=b=>`<span class="num ${cls(b.totalRet)}">${pct(b.totalRet)}</span><span class="rb">B&amp;H ${pct(b.buyHold)} · ${b.trades} op. · acierto ${b.winRate==null?'–':fmt(b.winRate*100,0)+'%'}</span>`;
+  const btCell=b=>!b?'<span class="muted">–</span><span class="rb">sin historia suficiente</span>':`<span class="num ${cls(b.totalRet)}">${pct(b.totalRet)}</span><span class="rb">B&amp;H ${pct(b.buyHold)} · ${b.trades} op. · acierto ${b.winRate==null?'–':fmt(b.winRate*100,0)+'%'}</span>`;
   const canNotify='Notification'in window;
   view.innerHTML=`
   <section class="panel"><div class="row"><div><h2>Alertas de hoy</h2><p class="sub">Señales nuevas al cierre de la última vela diaria. Durante la sesión la vela de hoy está en curso, así que una señal puede aparecer o desaparecer hasta el cierre.</p></div>
     ${canNotify?`<button class="btn" id="notif">${Notification.permission==='granted'?'Avisos del navegador activados':'Avisarme en este navegador'}</button>`:''}</div>
     ${al.length?`<div class="alerts">${al.map(a=>`<a class="alert ${a.s.code==='buy_new'?'a-buy':'a-sell'}" href="#${a.t}"><span><b>${a.t}</b> ${STRAT[a.k]}: <b>${a.s.code==='buy_new'?'COMPRA':'VENTA'}</b></span><span class="rb">${esc(a.s.detail)}</span></a>`).join('')}</div>`:'<p class="muted" style="margin:0">No hay señales nuevas de compra ni de venta.</p>'}
   </section>
-  <section class="panel"><h2>Estado de cada análisis</h2><p class="sub">Backtest de ${SIG.tickers[tks[0]]?fdate(SIG.tickers[tks[0]].from):''} a ${SIG.tickers[tks[0]]?fdate(SIG.tickers[tks[0]].to):''}: retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H). Clic en una fila para ver el detalle.</p>
+  <section class="panel"><div class="row"><h2>Estado de cada análisis</h2><div class="seg" id="bwin">${WINS.map(([k,l])=>`<button data-w="${k}" aria-pressed="${k===btWin}">${l}</button>`).join('')}</div></div><p class="sub">Backtest de los últimos ${WINS.find(x=>x[0]===btWin)[1]}${(()=>{const q=SIG.tickers[tks[0]];const b=q&&btOf(q.ichimoku);return b?` (${fdate(b.from)} a ${fdate(q.to)})`:''})()}: retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H). Clic en una fila para ver el detalle.</p>
   <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Ichimoku</th><th class="btcol">Backtest Ichimoku</th><th style="text-align:left">EMA 9/18 vs SMA 30</th><th class="btcol">Backtest medias</th></tr></thead><tbody>
   ${rows.map(t=>{const v=SIG.tickers[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t]||'')}</span></td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.ichimoku.state)}<span class="rb">${esc(v.ichimoku.state.detail)}</span><div class="btin">${btCell(v.ichimoku.bt)}</div></td><td class="btcol">${btCell(v.ichimoku.bt)}</td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.medias.state)}<span class="rb">${esc(v.medias.state.detail)}</span><div class="btin">${btCell(v.medias.bt)}</div></td><td class="btcol">${btCell(v.medias.bt)}</td></tr>`}).join('')}
+    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.ichimoku.state)}<span class="rb">${esc(v.ichimoku.state.detail)}</span><div class="btin">${btCell(btOf(v.ichimoku))}</div></td><td class="btcol">${btCell(btOf(v.ichimoku))}</td>
+    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.medias.state)}<span class="rb">${esc(v.medias.state.detail)}</span><div class="btin">${btCell(btOf(v.medias))}</div></td><td class="btcol">${btCell(btOf(v.medias))}</td></tr>`}).join('')}
   </tbody></table></div>
   ${missing.length?`<p class="note">Sin historia suficiente para las estrategias: ${missing.join(', ')}.</p>`:''}
   <p class="note"><b>Ichimoku:</b> ${esc(SIG.rules.ichimoku)}<br><b>Medias:</b> ${esc(SIG.rules.medias)}<br><b>Backtest:</b> ${esc(SIG.rules.backtest)}</p></section>`;
   view.querySelector('tbody').onclick=e=>{const tr=e.target.closest('tr');if(tr){tab=sigFirst(tr.dataset.t);location.hash=tr.dataset.t}};
+  view.querySelector('#bwin').onclick=e=>{const b=e.target.closest('button');if(!b)return;btWin=b.dataset.w;try{localStorage.setItem('btWin',btWin)}catch(_){}renderSignals(view)};
   const nb=view.querySelector('#notif');if(nb)nb.onclick=async()=>{try{const r=await Notification.requestPermission();nb.textContent=r==='granted'?'Avisos del navegador activados':'El navegador no permitió avisos'}catch(e){nb.textContent='El navegador no permitió avisos'}};
   rerender=()=>{};
 }
@@ -332,6 +336,10 @@ async function drawStrat(t,which,daily,pane,ctl){
   <div class="legend">${which==='ichi'?'<span><i style="background:#2a9bb0"></i>Tenkan (9)</span><span><i style="background:#c73a3a"></i>Kijun (26)</span><span><i style="background:#0f8a5f"></i>Senkou A</span><span><i style="background:#d0661b"></i>Senkou B</span>':'<span><i style="background:#2a9bb0"></i>EMA 9</span><span><i style="background:#9b3fb5"></i>EMA 18</span><span><i style="background:#d0661b"></i>SMA 30</span>'}<span>▲ compra · ▼ venta (apertura del día siguiente a la señal)</span></div>
   <div class="grid2" style="margin-top:16px"><div><p class="sub" style="margin:0 0 4px">Capital de la estrategia vs comprar y mantener (base 100)</p><div class="chart sm" id="ec" style="height:180px"></div></div>
   <div class="levels" style="align-content:start">${[['Retorno estrategia',pctN(bt.totalRet)],['Comprar y mantener',pctN(bt.buyHold)],['Operaciones',bt.trades],['% ganadoras',bt.winRate==null?'–':fmt(bt.winRate*100,0)+'%'],['Promedio por operación',pctN(bt.avgTrade)],['Profit factor',bt.profitFactor==null?'–':fmt(bt.profitFactor,2)],['Caída máxima',pctN(bt.maxDD)],['Tiempo invertido',fmt(bt.exposure*100,0)+'%'],['Operación abierta',bt.open?pctN(bt.open.ret):'ninguna']].map(([l,v])=>`<div><span class="muted">${l}</span><span class="num">${v}</span></div>`).join('')}</div></div>
+  <h3 class="sub" style="margin:16px 0 6px;color:var(--ink);font-weight:600">Backtest por período</h3>
+  <div class="tablebox"><table><thead><tr><th>Período</th><th>Estrategia</th><th>Comprar y mantener</th><th>Operaciones</th><th>% ganadoras</th><th>Caída máxima</th></tr></thead><tbody>
+  ${WINS.map(([k,l])=>{const w=(info[key].bts||{})[k];return w?`<tr style="cursor:default"><td>${l}<span class="rb">desde ${fdate(w.from)}</span></td><td class="num ${cls(w.totalRet)}">${pct(w.totalRet)}</td><td class="num ${cls(w.buyHold)}">${pct(w.buyHold)}</td><td class="num">${w.trades}</td><td class="num">${w.winRate==null?'–':fmt(w.winRate*100,0)+'%'}</td><td class="num">${pctN(w.maxDD)}</td></tr>`:`<tr style="cursor:default"><td>${l}</td><td colspan="5" class="muted">Sin historia suficiente.</td></tr>`}).join('')}
+  </tbody></table></div>
   <h3 class="sub" style="margin:16px 0 6px;color:var(--ink);font-weight:600">Últimas operaciones</h3>
   <div class="tablebox"><table><thead><tr><th>Compra</th><th>Precio</th><th>Venta</th><th>Precio</th><th>Resultado</th></tr></thead><tbody>
   ${bt.open?`<tr style="cursor:default"><td>${fdate(bt.open.in)}</td><td class="num">${fmt(bt.open.pin)}</td><td class="muted">abierta</td><td class="num">${fmt(bars[bars.length-1].c)}</td><td class="num ${cls(bt.open.ret)}">${pct(bt.open.ret)}</td></tr>`:''}
