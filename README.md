@@ -8,7 +8,7 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 
 | Pieza | Qué hace |
 |---|---|
-| `index.html` | La app. GitHub Pages la publica tal cual. |
+| `index.html` | La app. GitHub Pages la publica tal cual. Incluye el Laboratorio (`#lab`), que calcula indicadores y backtests en el navegador con los mismos datos. |
 | `scripts/fetch_data.py` | Descarga precios de Yahoo Finance (`yfinance`) y los guarda en `data/`. |
 | `.github/workflows/update-data.yml` | Ejecuta el script cada 15 minutos de lunes a viernes, en horario de mercado, y guarda los cambios. |
 | `data/<TICKER>.json` | Velas diarias (2 años, se acumulan) y semanales (10 años). |
