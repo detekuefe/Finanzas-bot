@@ -230,9 +230,16 @@ let tab='intra',ind={sma20:true,sma50:true,boll:false},selDate=null;
 async function renderAsset(view,t){
   view.innerHTML='<p class="empty">Cargando '+t+'…</p>';
   try{if(!cacheT[t])cacheT[t]=await getJSON('data/'+t+'.json');if(!cacheI[t])cacheI[t]=await getJSON('data/intra/'+t+'.json').catch(()=>({days:{}}))}catch(e){view.innerHTML='<p class="empty">No se pudieron leer los datos de '+t+'.</p>';return}
+  if(CUR==='CLP'&&!cacheT.USDCLP)cacheT.USDCLP=await getJSON('data/USDCLP.json').catch(()=>null);
   if(curRoute!==t)return;
-  const D=cacheT[t],I=cacheI[t].days||{},m=M[t];
-  const daily=D.daily.map(r=>({d:r[0],o:r[1],h:r[2],l:r[3],c:r[4],v:r[5]})),weekly=(D.weekly||[]).map(r=>({d:r[0],o:r[1],h:r[2],l:r[3],c:r[4],v:r[5]}));
+  const D=cacheT[t],m=M[t];
+  // En pesos: cada precio se multiplica por el dólar de su fecha (diario si existe, si no semanal)
+  const FX=CUR==='CLP'&&cacheT.USDCLP?cacheT.USDCLP:null;
+  const fxD=FX?FX.daily.filter(r=>r[4]!=null).map(r=>[r[0],r[4]]):null,fxW=FX?(FX.weekly||[]).filter(r=>r[4]!=null).map(r=>[r[0],r[4]]):null;
+  const kf=d=>!FX?1:(fxD.length&&d>=fxD[0][0]?fxAt(fxD,d):fxAt(fxW,d)||1);
+  const cv=(r,k)=>({d:r[0],o:r[1]*k,h:r[2]*k,l:r[3]*k,c:r[4]*k,v:r[5]});
+  const daily=D.daily.map(r=>cv(r,kf(r[0]))),weekly=(D.weekly||[]).map(r=>cv(r,kf(r[0])));
+  const I={};for(const [d,bs] of Object.entries(cacheI[t].days||{})){const k=kf(d);I[d]=k===1?bs:bs.map(b=>[b[0],b[1]*k,b[2]*k,b[3]*k,b[4]*k,b[5]])}
   const planDays=(PLAN&&PLAN[t]?PLAN[t].intra:[]).filter(r=>!I[r.d]&&r.p.slice(1,7).some(x=>x!=null));
   const days=[...new Set([...Object.keys(I),...planDays.map(r=>r.d)])].sort().reverse();
   if(!selDate||!days.includes(selDate))selDate=days[0]||null;
@@ -246,7 +253,8 @@ async function renderAsset(view,t){
     <div class="stat"><b>1 año</b><span class="num ${cls(m.y1)}">${pct(m.y1)}</span></div>
     <div class="stat"><b>RSI 14</b><span class="num">${fmt(m.rsi,0)}</span></div>
     <div class="stat"><b>Volumen del día</b><span class="num">${fmtInt(daily.length?daily[daily.length-1].v:null)}</span></div>
-  </div></section>
+    <div class="stat" style="margin-left:auto"><b>Moneda</b>${curSeg('acur')}</div>
+  </div>${CUR==='CLP'?`<p class="note">Precios en pesos chilenos: cada vela se multiplica por el dólar de su día${FX?` (último: $${fmt(fxD[fxD.length-1][1],2)})`:''}. Los indicadores se calculan sobre esos precios en pesos.</p>`:''}</section>
   <section class="panel"><div class="row">
     <div class="seg" id="tabs">${[['intra','Intradía'],['d','Diario'],['w','Semanal'],['ichi','Ichimoku'],['med','Medias 9/18/30']].map(([k,l])=>`<button data-k="${k}" aria-pressed="${k===tab}">${l}</button>`).join('')}</div>
     <div id="ctl"></div></div>
@@ -254,7 +262,7 @@ async function renderAsset(view,t){
   const pane=view.querySelector('#pane'),ctl=view.querySelector('#ctl');
   const upc=()=>css('--up'),dnc=()=>css('--down');
   const draw=()=>{clearCharts();
-    if(tab==='ichi'||tab==='med'){drawStrat(t,tab,daily,pane,ctl);return}
+    if(tab==='ichi'||tab==='med'){drawStrat(t,tab,daily,pane,ctl,kf);return}
     if(tab==='intra'){
       ctl.innerHTML=`<label class="muted" style="font-size:.8rem">Sesión <select id="dsel">${days.map(d=>`<option value="${d}" ${d===selDate?'selected':''}>${fdate(d)}${I[d]?'':' (planilla)'}</option>`).join('')}</select></label>`;
       ctl.querySelector('#dsel').onchange=e=>{selDate=e.target.value;draw()};
@@ -268,7 +276,7 @@ async function renderAsset(view,t){
         const close=reg.length?reg[reg.length-1]:null;rows.push(['Último / cierre',close&&close[4],close&&close[0]+300]);
         chartPts=bars;
       }else{
-        const r=PLAN[t].intra.find(x=>x.d===selDate);const lab=['Premarket','10:31 Chile','10:35 Chile','10:45 Chile','11:00 Chile','11:15 Chile','11:30 Chile','Cierre'];rows=r.p.map((x,i)=>[lab[i],x,null]);chartPts=null;
+        const r0=PLAN[t].intra.find(x=>x.d===selDate);const r={...r0,p:r0.p.map(x=>x==null?null:x*kf(selDate))};const lab=['Premarket','10:31 Chile','10:35 Chile','10:45 Chile','11:00 Chile','11:15 Chile','11:30 Chile','Cierre'];rows=r.p.map((x,i)=>[lab[i],x,null]);chartPts=null;
       }
       const pc=prev?prev.c:null;
       pane.innerHTML=`<div class="grid2"><div>${chartPts?'<div class="chart" id="ic" style="height:380px"></div>':'<p class="empty">Esta sesión solo tiene los precios anotados en la planilla.</p>'}
@@ -308,6 +316,7 @@ async function renderAsset(view,t){
       const show=Math.min(bars.length,tab==='d'?130:160);pc.timeScale().setVisibleLogicalRange({from:bars.length-show,to:bars.length+2});
     }};
   view.querySelector('#tabs').onclick=e=>{const b=e.target.closest('button');if(!b)return;tab=b.dataset.k;view.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-pressed',x===b));draw()};
+  view.querySelector('#acur').onclick=e=>{const b=e.target.closest('button');if(!b||b.dataset.c===CUR)return;CUR=b.dataset.c;try{localStorage.setItem('cur',CUR)}catch(_){}computeMetrics();renderNav(curRoute);renderAsset(view,t)};
   draw();rerender=draw;
 }
 
@@ -349,13 +358,19 @@ function renderSignals(view){
 }
 function sigFirst(t){const v=SIG&&SIG.tickers[t];if(!v)return tab;return sigRank(v.medias.state.code)<sigRank(v.ichimoku.state.code)?'med':'ichi'}
 
-async function drawStrat(t,which,daily,pane,ctl){
+async function drawStrat(t,which,daily,pane,ctl,kf=()=>1){
   const key=which==='ichi'?'ichimoku':'medias';ctl.innerHTML='';
   const info=SIG&&SIG.tickers[t];if(!info){pane.innerHTML='<p class="empty">Sin historia suficiente para calcular esta estrategia.</p>';return}
   pane.innerHTML='<p class="empty">Cargando…</p>';
   try{if(!cacheS[t])cacheS[t]=await getJSON('data/strat/'+t+'.json')}catch(e){pane.innerHTML='<p class="empty">No se pudieron leer las señales.</p>';return}
   if(curRoute!==t||(tab!=='ichi'&&tab!=='med'))return;
-  const S=cacheS[t],X=S[key],st=info[key].state,bt=info[key].bt,dates=S.dates;
+  const S=cacheS[t],X0=S[key],st=info[key].state,bt=info[key].bt,dates=S.dates;
+  // Líneas, marcas y precios de las operaciones en la moneda elegida; las rentabilidades del backtest siguen en dólares
+  const conv=(vals,ds)=>vals.map((v,i)=>v==null?null:v*kf(ds[i]));const kl=kf(dates[dates.length-1]);
+  const X={...X0,events:X0.events.map(e=>({...e,p:e.p*kf(e.d)})),trades:X0.trades.map(r=>({...r,pin:r.pin*kf(r.in),pout:r.pout*kf(r.out)}))};
+  for(const k of ['tenkan','kijun','spanA','spanB','ema9','ema18','sma30'])if(X0[k])X[k]=conv(X0[k],dates);
+  if(X0.future)X.future={...X0.future,spanA:X0.future.spanA.map(v=>v==null?null:v*kl),spanB:X0.future.spanB.map(v=>v==null?null:v*kl)};
+  const openPin=bt.open?bt.open.pin*kf(bt.open.in):null;
   const byD=new Map(daily.map(b=>[b.d,b]));const bars=dates.map(d=>byD.get(d)).filter(Boolean);
   const pctN=x=>x==null?'–':pct(x);
   pane.innerHTML=`<div class="sigbox">${sigPill(st)} <b>${esc(st.label)}</b><span class="rb">${esc(st.detail)} · vela del ${fdate(st.date)}</span></div>
@@ -369,10 +384,10 @@ async function drawStrat(t,which,daily,pane,ctl){
   </tbody></table></div>
   <h3 class="sub" style="margin:16px 0 6px;color:var(--ink);font-weight:600">Últimas operaciones</h3>
   <div class="tablebox"><table><thead><tr><th>Compra</th><th>Precio</th><th>Venta</th><th>Precio</th><th>Resultado</th></tr></thead><tbody>
-  ${bt.open?`<tr style="cursor:default"><td>${fdate(bt.open.in)}</td><td class="num">${fmt(bt.open.pin)}</td><td class="muted">abierta</td><td class="num">${fmt(bars[bars.length-1].c)}</td><td class="num ${cls(bt.open.ret)}">${pct(bt.open.ret)}</td></tr>`:''}
+  ${bt.open?`<tr style="cursor:default"><td>${fdate(bt.open.in)}</td><td class="num">${fmt(openPin)}</td><td class="muted">abierta</td><td class="num">${fmt(bars[bars.length-1].c)}</td><td class="num ${cls(bt.open.ret)}">${pct(bt.open.ret)}</td></tr>`:''}
   ${[...X.trades].reverse().map(r=>`<tr style="cursor:default"><td>${fdate(r.in)}</td><td class="num">${fmt(r.pin)}</td><td>${fdate(r.out)}</td><td class="num">${fmt(r.pout)}</td><td class="num ${cls(r.ret)}">${pct(r.ret)}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">Sin operaciones cerradas.</td></tr>'}
   </tbody></table></div>
-  <p class="note">${esc(SIG.rules[key])} ${esc(SIG.rules.backtest)} Resultados pasados no garantizan resultados futuros.</p>`;
+  <p class="note">${esc(SIG.rules[key])} ${esc(SIG.rules.backtest)}${kl!==1?' Precios en pesos; las rentabilidades del backtest están en dólares (para medirlas en pesos usa el Laboratorio).':''} Resultados pasados no garantizan resultados futuros.</p>`;
   const upc=css('--up'),dnc=css('--down');
   const ch=mk(pane.querySelector('#sc'));const cs=ch.addCandlestickSeries({upColor:upc,downColor:dnc,borderUpColor:upc,borderDownColor:dnc,wickUpColor:upc,wickDownColor:dnc});
   cs.setData(bars.map(b=>({time:b.d,open:b.o,high:b.h,low:b.l,close:b.c})));
@@ -384,7 +399,7 @@ async function drawStrat(t,which,daily,pane,ctl){
   ch.timeScale().setVisibleLogicalRange({from:Math.max(0,bars.length-160),to:bars.length+(which==='ichi'?28:3)});
   const ec=mk(pane.querySelector('#ec'));const b0=bars[0].o;
   const es=ec.addLineSeries({color:css('--accent'),lineWidth:2,priceLineVisible:false});es.setData(X.equity.map((v,i)=>v==null?null:{time:dates[i],value:v*100}).filter(Boolean));
-  const bh=ec.addLineSeries({color:css('--muted'),lineWidth:1,lineStyle:2,priceLineVisible:false});bh.setData(bars.map(b=>({time:b.d,value:b.c/b0*100})));
+  const bh=ec.addLineSeries({color:css('--muted'),lineWidth:1,lineStyle:2,priceLineVisible:false});bh.setData(bars.map(b=>({time:b.d,value:b.c/kf(b.d)/(b0/kf(bars[0].d))*100})));
   ec.timeScale().fitContent();
 }
 
@@ -667,28 +682,29 @@ function labDetail() {
   if (!R) { box.hidden = true; return }
   box.hidden = false;
   const W = LAB_WINS[cfg.tf].filter(([k]) => R.res[k]); if (!R.res[cfg.win]) cfg.win = W[W.length - 1][0];
-  const r = R.res[cfg.win], S = R.S;
+  const r = R.res[cfg.win], S = R.S, kd = d => R.K ? R.K[S.d.indexOf(d)] : 1;
   const pN = x => x == null ? '–' : pct(x);
   box.innerHTML = `<div class="row"><h2>${t} <span class="muted" style="font-size:.85rem;font-weight:400">${esc(RUBRO[t] || '')}</span></h2>
     <div class="seg" id="lwin">${W.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === cfg.win}">${l}</button>`).join('')}</div></div>
-    <p class="sub">Desde ${fdate(r.from)} hasta ${fdate(S.d[S.d.length - 1])}, con velas ${cfg.tf === 'd' ? 'diarias' : 'semanales'}. Gráfico de precios en dólares; rentabilidades en ${cfg.cur === 'CLP' && R.K ? `pesos (dólar de ${fmt(R.K[i0Of(r)], 0)} a ${fmt(R.K[R.K.length - 1], 0)})` : 'dólares'}.</p>
+    <p class="sub">Desde ${fdate(r.from)} hasta ${fdate(S.d[S.d.length - 1])}, con velas ${cfg.tf === 'd' ? 'diarias' : 'semanales'}. Precios y rentabilidades en ${cfg.cur === 'CLP' && R.K ? `pesos (dólar de ${fmt(R.K[i0Of(r)], 0)} a ${fmt(R.K[R.K.length - 1], 0)})` : 'dólares'}.</p>
     <div class="chart" id="lpc" style="height:380px"></div>
     <div class="legend" id="lleg"></div>
     <div class="grid2" style="margin-top:16px"><div><p class="sub" style="margin:0 0 4px">Capital de la estrategia vs comprar y mantener (base 100)</p><div class="chart sm" id="lec" style="height:200px"></div></div>
     <div class="levels" style="align-content:start">${[['Retorno estrategia', pN(r.ret)], ['Comprar y mantener', pN(r.bh)], ['Operaciones', r.trades], ['% ganadoras', r.win == null ? '–' : fmt(r.win * 100, 0) + '%'], ['Promedio por operación', pN(r.avg)], ['Profit factor', r.pf == null ? '–' : fmt(r.pf, 2)], ['Caída máxima', pN(r.dd)], ['Caída máx. B&H', pN(r.bhdd)], ['Tiempo invertido', fmt(r.expo * 100, 0) + '%'], ['Operación abierta', r.open ? pN(r.open.ret) : 'ninguna']].map(([l, v]) => `<div><span class="muted">${l}</span><span class="num">${v}</span></div>`).join('')}</div></div>
     <h3 class="sub" style="margin:16px 0 6px;color:var(--ink);font-weight:600">Operaciones del período</h3>
     <div class="tablebox"><table><thead><tr><th>Compra</th><th>Precio</th><th>Venta</th><th>Precio</th><th>Motivo</th><th>Resultado</th></tr></thead><tbody>
-    ${r.open ? `<tr style="cursor:default"><td>${fdate(r.open.in)}</td><td class="num">${fmt(r.open.pin)}</td><td class="muted">abierta</td><td class="num">${fmt(S.c[S.c.length - 1])}</td><td></td><td class="num ${cls(r.open.ret)}">${pct(r.open.ret)}</td></tr>` : ''}
-    ${[...r.list].reverse().map(x => `<tr style="cursor:default"><td>${fdate(x.in)}</td><td class="num">${fmt(x.pin)}</td><td>${fdate(x.out)}</td><td class="num">${fmt(x.pout)}</td><td>${{ regla: 'regla de venta', stop: 'stop', objetivo: 'toma de ganancia' }[x.why]}</td><td class="num ${cls(x.ret)}">${pct(x.ret)}</td></tr>`).join('') || (r.open ? '' : '<tr><td colspan="6" class="muted">Sin operaciones en el período.</td></tr>')}
+    ${r.open ? `<tr style="cursor:default"><td>${fdate(r.open.in)}</td><td class="num">${fmt(r.open.pin * kd(r.open.in))}</td><td class="muted">abierta</td><td class="num">${fmt(S.c[S.c.length - 1] * kd(S.d[S.d.length - 1]))}</td><td></td><td class="num ${cls(r.open.ret)}">${pct(r.open.ret)}</td></tr>` : ''}
+    ${[...r.list].reverse().map(x => `<tr style="cursor:default"><td>${fdate(x.in)}</td><td class="num">${fmt(x.pin * kd(x.in))}</td><td>${fdate(x.out)}</td><td class="num">${fmt(x.pout * kd(x.out))}</td><td>${{ regla: 'regla de venta', stop: 'stop', objetivo: 'toma de ganancia' }[x.why]}</td><td class="num ${cls(x.ret)}">${pct(x.ret)}</td></tr>`).join('') || (r.open ? '' : '<tr><td colspan="6" class="muted">Sin operaciones en el período.</td></tr>')}
     </tbody></table></div>`;
   box.querySelector('#lwin').onclick = e => { const b = e.target.closest('button'); if (!b) return; cfg.win = b.dataset.v; labSave(); labDetail() };
   const i0 = r.i0, ds = S.d.slice(i0), upc = css('--up'), dnc = css('--down');
   const ch = mk(box.querySelector('#lpc')); const cs = ch.addCandlestickSeries({ upColor: upc, downColor: dnc, borderUpColor: upc, borderDownColor: dnc, wickUpColor: upc, wickDownColor: dnc });
-  cs.setData(ds.map((d, j) => ({ time: d, open: S.o[i0 + j], high: S.h[i0 + j], low: S.l[i0 + j], close: S.c[i0 + j] })));
+  const px = j => R.K ? R.K[j] : 1;
+  cs.setData(ds.map((d, j) => ({ time: d, open: S.o[i0 + j] * px(i0 + j), high: S.h[i0 + j] * px(i0 + j), low: S.l[i0 + j] * px(i0 + j), close: S.c[i0 + j] * px(i0 + j) })));
   const lines = labLines(S, cfg), leg = [];
-  lines.forEach(([n, v], j) => { const col = PALETTE[(j + 1) % PALETTE.length]; const s = ch.addLineSeries({ color: col, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(ds.map((d, k) => v[i0 + k] == null ? null : { time: d, value: v[i0 + k] }).filter(Boolean)); leg.push(`<span><i style="background:${col}"></i>${esc(n)}</span>`) });
+  lines.forEach(([n, v], j) => { const col = PALETTE[(j + 1) % PALETTE.length]; const s = ch.addLineSeries({ color: col, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(ds.map((d, k) => v[i0 + k] == null ? null : { time: d, value: v[i0 + k] * px(i0 + k) }).filter(Boolean)); leg.push(`<span><i style="background:${col}"></i>${esc(n)}</span>`) });
   box.querySelector('#lleg').innerHTML = leg.join('') + '<span>▲ compra · ▼ venta</span>';
-  cs.setMarkers(r.ev.map(e => ({ time: e.d, position: e.t === 'buy' ? 'belowBar' : 'aboveBar', color: e.t === 'buy' ? upc : dnc, shape: e.t === 'buy' ? 'arrowUp' : 'arrowDown', text: (e.t === 'buy' ? 'C ' : 'V ') + fmt(e.p) })));
+  cs.setMarkers(r.ev.map(e => ({ time: e.d, position: e.t === 'buy' ? 'belowBar' : 'aboveBar', color: e.t === 'buy' ? upc : dnc, shape: e.t === 'buy' ? 'arrowUp' : 'arrowDown', text: (e.t === 'buy' ? 'C ' : 'V ') + fmt(e.p * px(S.d.indexOf(e.d))) })));
   ch.timeScale().fitContent();
   const ec = mk(box.querySelector('#lec'));
   const es = ec.addLineSeries({ color: css('--accent'), lineWidth: 2, priceLineVisible: false }); es.setData(r.eq.map((v, j) => ({ time: ds[j], value: v * 100 })));
