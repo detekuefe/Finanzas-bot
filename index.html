@@ -833,30 +833,36 @@ function labDetail() {
 }
 
 // ---------- Ranking de combinaciones (data/ranking.json, lo genera scripts/ranking.js) ----------
-let RANK = null, rkWin = 'all', rkSort = 'rel';
-const RK_WINS = [['all', 'Todos los plazos'], ['6m', '6 meses'], ['12m', '12 meses'], ['18m', '18 meses'], ['24m', '24 meses']];
+let RANK = null, rkTf = 'd', rkWin = 'all', rkSort = 'rel';
+const RK_WINS = { d: [['all', 'Todos los plazos'], ['6m', '6 meses'], ['12m', '12 meses'], ['18m', '18 meses'], ['24m', '24 meses']],
+  w: [['all', 'Todos los plazos'], ['1a', '1 año'], ['3a', '3 años'], ['5a', '5 años'], ['10a', '10 años'], ['2020', 'Año 2020'], ['2022', 'Año 2022']] };
 const RK_SORTS = [['rel', 'Rentabilidad frente a comprar y mantener'], ['beat', 'Casos en que supera a comprar y mantener'], ['risk', 'Casos con mejor retorno por unidad de caída'], ['dd', 'Menor caída máxima']];
 function labLink(cfg) { return '#lab?c=' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))) }
 async function renderRanking(view) {
   if (!RANK) { view.innerHTML = '<p class="empty">Cargando ranking…</p>'; try { RANK = await getJSON('data/ranking.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay ranking calculado.</p>'; return } if (curRoute !== 'ranking') return }
+  if (!RK_WINS[rkTf].some(x => x[0] === rkWin)) rkWin = 'all';
   const key = { rel: x => x.rel, beat: x => x.beat / x.n, risk: x => x.risk / x.n, dd: x => x.dd }[rkSort];
-  const L = RANK.list.filter(s => s.w[rkWin] && s.w[rkWin].n).sort((a, b) => key(b.w[rkWin]) - key(a.w[rkWin]));
-  const pos = L.filter(s => s.w[rkWin].rel > 0).length, bh = L[0] ? L[0].w[rkWin] : null;
-  const winLab = RK_WINS.find(x => x[0] === rkWin)[1].toLowerCase();
+  const G = s => (s[rkTf] || {})[rkWin];
+  const L = RANK.list.filter(s => G(s) && G(s).n).sort((a, b) => key(G(b)) - key(G(a)));
+  const pos = L.filter(s => G(s).rel > 0).length, bh = L[0] ? G(L[0]) : null;
+  const winLab = RK_WINS[rkTf].find(x => x[0] === rkWin)[1].toLowerCase();
+  const nA = rkTf === 'w' ? (RANK.assetsW || RANK.assets).length : RANK.assets.length;
   view.innerHTML = `<section class="panel"><h2>Ranking de combinaciones</h2>
-    <p class="sub">${RANK.list.length} combinaciones del Laboratorio probadas en ${RANK.assets.length} activos con velas diarias, en plazos de 6, 12, 18 y 24 meses hasta el ${fdate(RANK.to)}. Se recalcula cada día al cierre.</p>
-    <div class="lab-top"><span class="seg" id="rkw">${RK_WINS.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === rkWin}">${l}</button>`).join('')}</span>
+    <p class="sub">${RANK.list.length} combinaciones del Laboratorio probadas en ${nA} activos hasta el ${fdate(RANK.to)}. ${rkTf === 'd' ? 'Velas diarias, plazos de 6 a 24 meses.' : 'Velas semanales: los períodos de cada indicador se cuentan en semanas (una SMA 50 semanal equivale a unos 250 días). Plazos de 1 a 10 años y los años 2020 (caída por la pandemia y rebote) y 2022 (mercado bajista). Los activos con menos historia entran solo en los plazos que alcanzan a cubrir.'} Se recalcula cada día al cierre.</p>
+    <div class="lab-top"><span class="seg" id="rkt"><button data-v="d" aria-pressed="${rkTf === 'd'}">Diarias (2 años)</button><button data-v="w" aria-pressed="${rkTf === 'w'}">Semanales (10 años)</button></span>
+      <span class="seg" id="rkw" style="flex-wrap:wrap">${RK_WINS[rkTf].map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === rkWin}">${l}</button>`).join('')}</span>
       <label>Ordenar por <select id="rks">${RK_SORTS.map(([k, l]) => `<option value="${k}" ${k === rkSort ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-    <p class="note" style="margin-bottom:10px"><b>${pos ? `${pos} combinaciones le ganan` : 'Ninguna combinación le gana'} a comprar y mantener en ${rkWin === 'all' ? 'el conjunto de plazos' : winLab}.</b> Comprar y mantener rindió una mediana de ${pct(bh && bh.bh)} por activo, con una caída máxima mediana de ${pct(bh && bh.bhdd)}.</p>
+    <p class="note" style="margin-bottom:10px"><b>${pos ? `${pos} combinaciones le ganan` : 'Ninguna combinación le gana'} a comprar y mantener en ${rkWin === 'all' ? 'el conjunto de plazos' : /^20/.test(rkWin) ? 'el ' + winLab : 'el plazo de ' + winLab}.</b> Comprar y mantener rindió una mediana de ${pct(bh && bh.bh)} por activo, con una caída máxima mediana de ${pct(bh && bh.bhdd)}.</p>
     <div class="tablebox"><table><thead><tr><th>#</th><th style="text-align:left">Combinación</th><th title="Promedio geométrico de (1 + estrategia) / (1 + comprar y mantener) en todos los activos y plazos">vs comprar y mantener</th><th title="Activos × plazos en que la estrategia rinde más">Supera</th><th title="Activos × plazos con mejor retorno dividido por caída máxima">Mejor ret./caída</th><th>Retorno mediano</th><th>Caída mediana</th><th>Op. por activo</th><th>Invertido</th><th></th></tr></thead><tbody>
-    ${L.map((s, i) => { const x = s.w[rkWin]; const cfg = { ...s.cfg, assets: RANK.assets, sel: null, win: rkWin === 'all' ? '24m' : rkWin };
+    ${L.map((s, i) => { const x = G(s); const cfg = { ...s.cfg, tf: rkTf, assets: rkTf === 'w' ? (RANK.assetsW || RANK.assets) : RANK.assets, sel: null, win: rkTf === 'd' ? (rkWin === 'all' ? '24m' : rkWin) : (/^\d+a$/.test(rkWin) ? rkWin : '10a') };
       return `<tr style="cursor:default"><td class="num muted">${i + 1}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(s.name)}<span class="rb">${esc(s.group)}</span></td>
       <td class="num ${cls(x.rel)}">${pct(x.rel)}</td><td class="num">${x.beat} de ${x.n}<span class="rb">${fmt(x.beat / x.n * 100, 0)}%</span></td><td class="num">${x.risk} de ${x.n}<span class="rb">${fmt(x.risk / x.n * 100, 0)}%</span></td>
       <td class="num ${cls(x.ret)}">${pct(x.ret)}<span class="rb">B&amp;H ${pct(x.bh)}</span></td><td class="num">${pct(x.dd)}<span class="rb">B&amp;H ${pct(x.bhdd)}</span></td><td class="num">${fmt(x.tr, 1)}</td><td class="num">${fmt(x.expo * 100, 0)}%</td>
       <td><a class="btn" style="text-decoration:none;white-space:nowrap" href="${labLink(cfg)}">Abrir</a></td></tr>` }).join('')}
     </tbody></table></div>
     <p class="note"><b>Cómo leerlo.</b> "vs comprar y mantener" compara cuánto terminarías teniendo con la estrategia frente a comprar y mantener, promediado en forma geométrica para que un activo que sube 4.000% no domine el resultado: −10% significa terminar en promedio con un 10% menos de capital. "Supera" cuenta los casos (activo × plazo) en que la estrategia rinde más. "Mejor ret./caída" cuenta los casos en que gana más por cada punto de caída máxima. Retorno y caída son medianas por activo. "Abrir" carga la combinación en el Laboratorio con todos los activos.</p>
-    <p class="note"><b>Cuidado con el sobreajuste.</b> Al probar muchas combinaciones sobre los mismos datos, la que sale primera en parte tuvo suerte. Las más confiables son las que quedan arriba en todos los plazos, no solo en uno. Estos dos años fueron de subidas muy fuertes, el escenario más difícil para cualquier regla que sale del mercado. Resultados pasados no garantizan resultados futuros.</p></section>`;
+    <p class="note"><b>Cuidado con el sobreajuste.</b> Al probar muchas combinaciones sobre los mismos datos, la que sale primera en parte tuvo suerte. Las más confiables son las que quedan arriba en todos los plazos, no solo en uno. ${rkTf === 'd' ? 'Estos dos años fueron de subidas muy fuertes, el escenario más difícil para cualquier regla que sale del mercado.' : 'En los años 2020 y 2022 cada estrategia parte sin posición el 1 de enero; las de cruce o ruptura que esperan una señal nueva quedan favorecidas en un año que empezó cayendo.'} Resultados pasados no garantizan resultados futuros.</p></section>`;
+  view.querySelector('#rkt').onclick = e => { const b = e.target.closest('button'); if (!b) return; rkTf = b.dataset.v; rkWin = 'all'; renderRanking(view) };
   view.querySelector('#rkw').onclick = e => { const b = e.target.closest('button'); if (!b) return; rkWin = b.dataset.v; renderRanking(view) };
   view.querySelector('#rks').onchange = e => { rkSort = e.target.value; renderRanking(view) };
   rerender = () => { };
