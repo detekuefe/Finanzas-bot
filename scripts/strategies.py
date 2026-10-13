@@ -31,7 +31,8 @@ RECENT = 3  # sesiones en que una señal se considera "nueva"
 WINDOWS = (6, 12, 18, 24)  # meses de backtest
 
 TICKERS = ["QQQ", "NVDA", "AMD", "INTC", "MU", "SNDK", "WDC", "STX", "NTAP", "DELL",
-           "FLEX", "AEHR", "AXTI", "DDOG", "ASTS", "LUNR", "SPCX", "HYMC", "MP"]
+           "FLEX", "AEHR", "AXTI", "DDOG", "ASTS", "LUNR", "SPCX", "HYMC", "MP",
+           "ACWI", "SP500", "NASDAQ"]
 
 
 def ema(v, n):

@@ -121,7 +121,7 @@ select{font:inherit;font-size:.8rem;padding:4px 6px;border:1px solid var(--line)
 <div class="wrap">
   <header class="top">
     <h1>Mesa Finanzas Bot <small id="asof"></small></h1>
-    <span class="src">Precios de Yahoo Finance, actualizados por GitHub cada 15 minutos. Horas en hora de Chile.</span>
+    <span class="src">Precios de Yahoo Finance, actualizados por GitHub cada 5 minutos en horario de mercado. Horas en hora de Chile.</span>
   </header>
   <div class="status" role="status"><span class="led busy" id="led"></span><span class="msg" id="smsg">Cargando datos…</span></div>
   <nav class="tickers" id="nav" aria-label="Activos"></nav>
@@ -131,8 +131,8 @@ select{font:inherit;font-size:.8rem;padding:4px 6px;border:1px solid var(--line)
 <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
-const RUBRO={NVDA:'Tecnología electrónica',AMD:'Tecnología electrónica',WDC:'Tecnología electrónica',MU:'Tecnología electrónica',SNDK:'Tecnología electrónica',ASTS:'Comunicaciones',LUNR:'Aeroespacial y defensa',HYMC:'Metales preciosos',MP:'Imanes',DELL:'Hardware',INTC:'Semiconductores',AEHR:'Semiconductores',AXTI:'Semiconductores',NTAP:'Almacenamiento',SPCX:'Aeroespacial',QQQ:'ETF Nasdaq 100',STX:'Almacenamiento',FLEX:'Manufactura electrónica',DDOG:'Software'};
-const ALL=['QQQ','NVDA','AMD','INTC','MU','SNDK','WDC','STX','NTAP','DELL','FLEX','AEHR','AXTI','DDOG','ASTS','LUNR','SPCX','HYMC','MP'];
+const RUBRO={NVDA:'Tecnología electrónica',AMD:'Tecnología electrónica',WDC:'Tecnología electrónica',MU:'Tecnología electrónica',SNDK:'Tecnología electrónica',ASTS:'Comunicaciones',LUNR:'Aeroespacial y defensa',HYMC:'Metales preciosos',MP:'Imanes',DELL:'Hardware',INTC:'Semiconductores',AEHR:'Semiconductores',AXTI:'Semiconductores',NTAP:'Almacenamiento',SPCX:'Aeroespacial',QQQ:'ETF Nasdaq 100',STX:'Almacenamiento',FLEX:'Manufactura electrónica',DDOG:'Software',ACWI:'ETF acciones mundiales (MSCI ACWI)',SP500:'Índice S&P 500',NASDAQ:'Índice Nasdaq Compuesto'};
+const ALL=['QQQ','NVDA','AMD','INTC','MU','SNDK','WDC','STX','NTAP','DELL','FLEX','AEHR','AXTI','DDOG','ASTS','LUNR','SPCX','HYMC','MP','ACWI','SP500','NASDAQ'];
 // Momentos de la sesión que seguía la planilla, medidos desde la apertura de Nueva York (9:30)
 const SLOTS=[['Apertura',0],['+5 min',5],['+15 min',15],['+30 min',30],['+45 min',45],['+60 min',60]];
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -160,13 +160,19 @@ function pivots(h,l,c){const pp=(h+l+c)/3,bc=(h+l)/2,tc=2*pp-bc;return{pp,r1:2*p
 // ---------- Datos ----------
 let SUM=null,ORDER=[],M={};const cacheT={},cacheI={};let PLAN=null;
 async function getJSON(p){const r=await fetch(p,{cache:'no-store'});if(!r.ok)throw new Error(p+': '+r.status);return r.json()}
-function computeMetrics(){M={};for(const t of ORDER){const cl=SUM.tickers[t].closes,c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(c,20);const lb=SUM.tickers[t].lastBar;
-  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?c[n-1]/s20[n-1]-1:null,rsi:rsi(c)[n-1],spark:c.slice(-60),lastBar:lb,price:lb?lb[4]:c[n-1]}}}
+let CUR='USD';try{if(localStorage.getItem('cur')==='CLP')CUR='CLP'}catch(e){}
+// Valor del dólar en pesos para una fecha: último cierre disponible en o antes de ese día
+function fxAt(s,d){if(!s||!s.length)return null;let lo=0,hi=s.length-1;if(d<s[0][0])return s[0][1];while(lo<hi){const m=(lo+hi+1)>>1;if(s[m][0]<=d)lo=m;else hi=m-1}return s[lo][1]}
+const fxSum=()=>(SUM&&SUM.macro&&SUM.macro.USDCLP)||null;
+const inCur=cl=>{const s=fxSum();return CUR==='CLP'&&s?cl.map(([d,c])=>[d,c*fxAt(s,d)]):cl};
+const curSeg=id=>`<div class="seg" id="${id}" title="Moneda en que se miden precios y rentabilidades"><button data-c="USD" aria-pressed="${CUR==='USD'}">Dólares</button><button data-c="CLP" aria-pressed="${CUR==='CLP'}">Pesos</button></div>`;
+function computeMetrics(){M={};for(const t of ORDER){const raw=SUM.tickers[t].closes,cl=inCur(raw),cu=raw.map(x=>x[1]),c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(cu,20);const lb=SUM.tickers[t].lastBar;const fxl=CUR==='CLP'&&fxSum()?fxSum()[fxSum().length-1][1]:1;
+  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-60),lastBar:lb,price:lb?lb[4]*fxl:c[n-1]}}}
 
 const led=document.getElementById('led'),smsg=document.getElementById('smsg');
 function setStatus(kind,msg){led.className='led '+kind;smsg.textContent=msg}
 function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()-Date.parse(u))/60000;const when=new Date(u).toLocaleString('es-CL',{timeZone:'America/Santiago',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
-  setStatus(ago<40?'ok':'busy',`Última descarga: ${when} (hora de Chile). ${ago<40?'La página se refresca sola cada 5 minutos.':'Fuera de horario de mercado, o la acción de GitHub no ha corrido recientemente.'}`)}
+  setStatus(ago<40?'ok':'busy',`Última descarga: ${when} (hora de Chile). ${ago<40?'La página se refresca sola cada 2 minutos.':'Fuera de horario de mercado, o la acción de GitHub no ha corrido recientemente.'}`)}
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
@@ -182,10 +188,10 @@ function sparkSvg(v){if(v.length<2)return'';const w=110,h=26,mn=Math.min(...v),m
 let sortKey='d1',sortDir=-1,perfRange=63;
 function renderSummary(view){
   const cols=[['t','Activo'],['price','Precio'],['d1','Día'],['d5','5 días'],['d21','1 mes'],['y1','1 año'],['vsS20','vs SMA20'],['rsi','RSI 14'],['spark','Últimos 60 días']];
-  const mac=SUM.macro||{};const mv=k=>{const s=mac[k];if(!s||s.length<2)return'';const a=s[s.length-1][1],b=s[s.length-2][1];return`<div><span class="muted">${{US10Y:'Tasa 10 años EE.UU.',BRENT:'Brent',VIX:'VIX'}[k]}</span><span class="num">${fmt(a)} <span class="${cls(a/b-1)}">${pct(a/b-1)}</span></span></div>`};
+  const mac=SUM.macro||{};const mv=k=>{const s=mac[k];if(!s||s.length<2)return'';const a=s[s.length-1][1],b=s[s.length-2][1];return`<div><span class="muted">${{US10Y:'Tasa 10 años EE.UU.',BRENT:'Brent',VIX:'VIX',USDCLP:'Dólar en pesos'}[k]}</span><span class="num">${fmt(a)} <span class="${cls(a/b-1)}">${pct(a/b-1)}</span></span></div>`};
   view.innerHTML=`
-  <section class="panel"><h2>Desempeño de los activos</h2><p class="sub">"Día" compara el último precio con el cierre anterior. Clic en una fila para abrir el activo.</p>
-  <div class="levels" style="margin-bottom:12px">${['VIX','US10Y','BRENT'].map(mv).join('')}</div>
+  <section class="panel"><div class="row"><h2>Desempeño de los activos</h2>${curSeg('cur')}</div><p class="sub">"Día" compara el último precio con el cierre anterior. ${CUR==='CLP'?'Precios y rentabilidades en pesos chilenos: incluyen la variación del dólar. RSI y SMA20 se calculan sobre el precio en dólares. ':''}Clic en una fila para abrir el activo.</p>
+  <div class="levels" style="margin-bottom:12px">${['VIX','US10Y','BRENT','USDCLP'].map(mv).join('')}</div>
   <div class="tablebox"><table><thead><tr>${cols.map(([k,l])=>`<th tabindex="0" data-k="${k}" ${k===sortKey?`aria-sort="${sortDir>0?'ascending':'descending'}"`:''}>${l}</th>`).join('')}</tr></thead><tbody></tbody></table></div></section>
   <div class="grid2">
     <section class="panel"><div class="row"><div><h2>Rendimiento comparado</h2><p class="sub">Base 100 al inicio del período</p></div>
@@ -206,15 +212,16 @@ function renderSummary(view){
   tb.onclick=e=>{const tr=e.target.closest('tr');if(tr)location.hash=tr.dataset.t};
   const hidden=new Set();
   const drawPerf=()=>{clearCharts();const el=view.querySelector('#perf');const ch=mk(el);const leg=[];const rk=[];
-    ORDER.forEach((t,i)=>{const d=SUM.tickers[t].closes.slice(-perfRange);const b=d[0][1];const s=ch.addLineSeries({color:PALETTE[i%PALETTE.length],lineWidth:t==='QQQ'?3:1.5,priceLineVisible:false,lastValueVisible:false,visible:!hidden.has(t)});
+    ORDER.forEach((t,i)=>{const d=inCur(SUM.tickers[t].closes).slice(-perfRange);const b=d[0][1];const s=ch.addLineSeries({color:PALETTE[i%PALETTE.length],lineWidth:t==='QQQ'?3:1.5,priceLineVisible:false,lastValueVisible:false,visible:!hidden.has(t)});
       s.setData(d.map(x=>({time:x[0],value:x[1]/b*100})));leg.push(`<span data-t="${t}" class="${hidden.has(t)?'off':''}"><i style="background:${PALETTE[i%PALETTE.length]}"></i>${t}</span>`);rk.push([t,d[d.length-1][1]/b-1])});
     ch.timeScale().fitContent();
     const lg=view.querySelector('#perfleg');lg.innerHTML=leg.join('');lg.onclick=e=>{const sp=e.target.closest('span');if(!sp)return;const t=sp.dataset.t;hidden.has(t)?hidden.delete(t):hidden.add(t);drawPerf()};
     rk.sort((a,b)=>b[1]-a[1]);const mx=Math.max(...rk.map(r=>Math.abs(r[1])))||1;
-    view.querySelector('#ranksub').textContent=`Retorno de las últimas ${perfRange} sesiones`;
+    view.querySelector('#ranksub').textContent=`Retorno de las últimas ${perfRange} sesiones${CUR==='CLP'?', en pesos':''}`;
     view.querySelector('#rank').innerHTML=rk.map(([t,r])=>{const w=Math.abs(r)/mx*50;return`<div class="bar"><span class="num">${t}</span><div class="track"><div class="mid"></div><div class="fill" style="${r>=0?`left:50%;width:${w}%;background:var(--up)`:`left:${50-w}%;width:${w}%;background:var(--down)`}"></div></div><span class="num ${cls(r)}" style="text-align:right">${pct(r)}</span></div>`}).join('')};
   drawPerf();
   view.querySelector('#prange').onclick=e=>{const b=e.target.closest('button');if(!b)return;perfRange=+b.dataset.n;view.querySelectorAll('#prange button').forEach(x=>x.setAttribute('aria-pressed',x===b));drawPerf()};
+  view.querySelector('#cur').onclick=e=>{const b=e.target.closest('button');if(!b||b.dataset.c===CUR)return;CUR=b.dataset.c;try{localStorage.setItem('cur',CUR)}catch(_){}computeMetrics();renderNav(curRoute);renderSummary(view)};
   rerender=drawPerf;
 }
 
@@ -463,7 +470,7 @@ const LAB_WINS = { d: [['3m', '3 meses', 3], ['6m', '6 meses', 6], ['12m', '12 m
 
 const labCond = c => { const d = LAB_DEFS[c.k]; return { k: c.k, op: c.op || d.ops[0][0], m: c.m || 'e', p: Object.assign({}, d.p, c.p || {}) } };
 const labFromPreset = id => { const pr = LAB_PRESETS.find(x => x[0] === id)[2]; return { entry: { all: pr.entry.all, c: pr.entry.c.map(labCond) }, exit: { all: pr.exit.all, c: pr.exit.c.map(labCond) } } };
-function labDefault() { return Object.assign({ assets: ['QQQ', 'NVDA'], tf: 'd', stop: '', tp: '', trail: '', cost: 0.05, sel: null, win: '12m' }, labFromPreset('ichi')) }
+function labDefault() { return Object.assign({ assets: ['QQQ', 'NVDA'], tf: 'd', cur: CUR, stop: '', tp: '', trail: '', cost: 0.05, sel: null, win: '12m' }, labFromPreset('ichi')) }
 let LAB = null;
 function labLoadCfg() {
   try { const m = location.hash.match(/^#lab\?c=(.+)$/); if (m) return JSON.parse(decodeURIComponent(escape(atob(m[1])))) } catch (e) { }
@@ -494,13 +501,15 @@ function labLines(S, cfg) {
 }
 
 // Señal al cierre de la barra i, ejecución en la apertura de i+1. Stops dentro de la barra.
-function labBacktest(S, E, X, o, i0) {
-  const n = S.c.length, cost = o.cost; let pos = 0, cash = 1, sh = 0, pin = 0, din = null, peak = 0, inMkt = 0;
+// K: valor del dólar en pesos por barra (null = medir en dólares). Las señales y los stops usan el precio en dólares;
+// al comprar se convierten pesos a dólares y al vender se vuelve a pesos.
+function labBacktest(S, E, X, o, i0, K) {
+  const n = S.c.length, cost = o.cost, k = i => K ? K[i] : 1; let pos = 0, cash = 1, sh = 0, pin = 0, kin = 1, din = null, peak = 0, inMkt = 0;
   const trades = [], eq = [], ev = [];
-  const sell = (i, px, why) => { cash = sh * px * (1 - cost); sh = 0; pos = 0; trades.push({ in: din, pin, out: S.d[i], pout: px, ret: px / pin * (1 - cost) ** 2 - 1, why }); ev.push({ d: S.d[i], t: 'sell', p: px }) };
+  const sell = (i, px, why) => { cash = sh * px * k(i) * (1 - cost); sh = 0; pos = 0; trades.push({ in: din, pin, out: S.d[i], pout: px, ret: px * k(i) / (pin * kin) * (1 - cost) ** 2 - 1, why }); ev.push({ d: S.d[i], t: 'sell', p: px }) };
   for (let i = i0; i < n; i++) {
     if (i > i0) {
-      if (pos === 0 && E[i - 1]) { sh = cash * (1 - cost) / S.o[i]; cash = 0; pos = 1; pin = S.o[i]; din = S.d[i]; peak = S.o[i]; ev.push({ d: S.d[i], t: 'buy', p: S.o[i] }) }
+      if (pos === 0 && E[i - 1]) { sh = cash * (1 - cost) / (S.o[i] * k(i)); cash = 0; pos = 1; pin = S.o[i]; kin = k(i); din = S.d[i]; peak = S.o[i]; ev.push({ d: S.d[i], t: 'buy', p: S.o[i] }) }
       else if (pos === 1 && X[i - 1]) sell(i, S.o[i], 'regla');
     }
     if (pos === 1) {
@@ -510,13 +519,14 @@ function labBacktest(S, E, X, o, i0) {
       else if (tp != null && S.h[i] >= tp) sell(i, Math.max(S.o[i], tp), 'objetivo');
       else { peak = Math.max(peak, S.h[i]); inMkt++ }
     }
-    eq.push(cash + sh * S.c[i]);
+    eq.push(cash + sh * S.c[i] * k(i));
   }
   let pk = eq[0], mdd = 0; for (const e of eq) { pk = Math.max(pk, e); mdd = Math.min(mdd, e / pk - 1) }
   const w = trades.filter(t => t.ret > 0).map(t => t.ret), l = trades.filter(t => t.ret <= 0).map(t => t.ret);
-  const open = pos === 1 ? { in: din, pin, ret: S.c[n - 1] / pin * (1 - cost) - 1 } : null;
-  let bpk = S.o[i0], bdd = 0; for (let i = i0; i < n; i++) { bpk = Math.max(bpk, S.c[i]); bdd = Math.min(bdd, S.c[i] / bpk - 1) }
-  return { ret: eq[eq.length - 1] - 1, bh: S.c[n - 1] / S.o[i0] - 1, trades: trades.length, win: trades.length ? w.length / trades.length : null,
+  const open = pos === 1 ? { in: din, pin, ret: S.c[n - 1] * k(n - 1) / (pin * kin) * (1 - cost) - 1 } : null;
+  const bhv = i => S.c[i] * k(i) / (S.o[i0] * k(i0));
+  let bpk = 1, bdd = 0; for (let i = i0; i < n; i++) { bpk = Math.max(bpk, bhv(i)); bdd = Math.min(bdd, bhv(i) / bpk - 1) }
+  return { ret: eq[eq.length - 1] - 1, bh: bhv(n - 1) - 1, trades: trades.length, win: trades.length ? w.length / trades.length : null,
     avg: trades.length ? trades.reduce((a, t) => a + t.ret, 0) / trades.length : null, pf: l.length && l.reduce((a, b) => a + b, 0) < 0 ? w.reduce((a, b) => a + b, 0) / -l.reduce((a, b) => a + b, 0) : null,
     dd: mdd, bhdd: bdd, expo: inMkt / Math.max(1, n - i0), open, from: S.d[i0], list: trades, eq, ev, i0 };
 }
@@ -525,13 +535,15 @@ function labRunAsset(t, cfg) {
   const S = labSeries(t, cfg.tf); if (S.c.length < 30) return null;
   const E = labSignals(S, cfg.entry), X = labSignals(S, cfg.exit, labSignals(S, { all: cfg.entry.all, c: cfg.entry.c.map(c => ({ ...c, m: 'e' })) }));
   const o = { cost: (+cfg.cost || 0) / 100, stop: +cfg.stop > 0 ? cfg.stop / 100 : null, tp: +cfg.tp > 0 ? cfg.tp / 100 : null, trail: +cfg.trail > 0 ? cfg.trail / 100 : null };
+  let K = null;
+  if (cfg.cur === 'CLP' && cacheT.USDCLP) { const fx = (cfg.tf === 'w' ? cacheT.USDCLP.weekly : cacheT.USDCLP.daily).filter(r => r[4] != null).map(r => [r[0], r[4]]); if (fx.length) K = S.d.map(d => fxAt(fx, d)) }
   const res = {}; const last = S.d[S.d.length - 1];
   for (const [k, , m] of LAB_WINS[cfg.tf]) {
     const start = monthsBack(last, m); const i0 = S.d.findIndex(d => d >= start);
     if (i0 < 0 || (i0 === 0 && (Date.parse(S.d[0]) - Date.parse(start)) / 864e5 > 10)) continue;
-    res[k] = labBacktest(S, E, X, o, i0);
+    res[k] = labBacktest(S, E, X, o, i0, K);
   }
-  return { S, E, X, res, state: { inE: E[E.length - 1], inX: X[X.length - 1] } };
+  return { S, E, X, K, res, state: { inE: E[E.length - 1], inX: X[X.length - 1] } };
 }
 
 // ---------- Interfaz ----------
@@ -560,6 +572,7 @@ function labRuleBox(side, title, help) {
 
 function renderLab(view) {
   if (!LAB) { LAB = labLoadCfg() || labDefault(); for (const s of ['entry', 'exit']) LAB[s].c = LAB[s].c.map(labCond) }
+  if (!LAB.cur) LAB.cur = 'USD';
   LAB.assets = LAB.assets.filter(t => ORDER.includes(t)); if (!LAB.assets.length) LAB.assets = [ORDER[0]];
   if (!LAB_WINS[LAB.tf].some(w => w[0] === LAB.win)) LAB.win = LAB_WINS[LAB.tf][LAB.tf === 'd' ? 2 : 1][0];
   view.innerHTML = `
@@ -567,6 +580,7 @@ function renderLab(view) {
     <p class="sub">Elige activos, arma reglas de compra y venta con distintos indicadores y compara el resultado con comprar y mantener en varios plazos. Solo posiciones compradas. La señal se toma al cierre y se ejecuta en la apertura siguiente.</p>
     <div class="lab-top">
       <label>Partir de <select id="lpre"><option value="">Elegir plantilla…</option>${LAB_PRESETS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+      <label>Moneda <span class="seg" id="lcur"><button data-c="USD" aria-pressed="${LAB.cur === 'USD'}">Dólares</button><button data-c="CLP" aria-pressed="${LAB.cur === 'CLP'}">Pesos</button></span></label>
       <label>Velas <span class="seg" id="ltf"><button data-v="d" aria-pressed="${LAB.tf === 'd'}">Diarias (2 años)</button><button data-v="w" aria-pressed="${LAB.tf === 'w'}">Semanales (10 años)</button></span></label>
     </div>
     <h3 class="lab-h">Activos <button class="lnk" id="lall">todos</button> <button class="lnk" id="lnone">ninguno</button></h3>
@@ -592,6 +606,7 @@ function renderLab(view) {
 function labWire(view) {
   const re = () => { labSave(); renderLab(view) };
   view.querySelector('#lpre').onchange = e => { if (!e.target.value) return; Object.assign(LAB, labFromPreset(e.target.value)); re() };
+  view.querySelector('#lcur').onclick = e => { const b = e.target.closest('button'); if (!b) return; LAB.cur = b.dataset.c; re() };
   view.querySelector('#ltf').onclick = e => { const b = e.target.closest('button'); if (!b) return; LAB.tf = b.dataset.v; re() };
   view.querySelector('.lab-assets').onchange = () => { LAB.assets = [...view.querySelectorAll('.lab-assets input:checked')].map(x => x.value); if (LAB.sel && !LAB.assets.includes(LAB.sel)) LAB.sel = null; labSave(); labCompute() };
   view.querySelector('#lall').onclick = () => { LAB.assets = [...ORDER]; re() };
@@ -622,7 +637,7 @@ async function labCompute() {
   const cfg = LAB;
   if (!cfg.assets.length) { box.innerHTML = '<p class="empty">Elige al menos un activo.</p>'; document.getElementById('ldet').hidden = true; return }
   if (!cfg.entry.c.length) { box.innerHTML = '<p class="empty">Agrega al menos una condición de compra.</p>'; document.getElementById('ldet').hidden = true; return }
-  const miss = cfg.assets.filter(t => !cacheT[t]);
+  const miss = cfg.assets.filter(t => !cacheT[t]).concat(cfg.cur === 'CLP' && !cacheT.USDCLP ? ['USDCLP'] : []);
   if (miss.length) { box.innerHTML = '<p class="empty">Cargando datos…</p>'; await Promise.all(miss.map(t => getJSON('data/' + t + '.json').then(d => { cacheT[t] = d }).catch(() => { }))) }
   if (curRoute !== 'lab' || cfg !== LAB) return;
   labRes = {};
@@ -633,7 +648,7 @@ async function labCompute() {
   const cell = r => r ? `<td><span class="num ${cls(r.ret)}">${pct(r.ret)}</span><span class="rb">B&amp;H ${pct(r.bh)} · ${r.trades} op.</span></td>` : '<td class="muted">–</td>';
   const nowTxt = r => { const st = r.state, open = Object.values(r.res).slice(-1)[0]?.open; return open ? (st.inX ? '<span class="sig sig-sell">VENTA</span>' : '<span class="sig sig-long">Comprado</span>') : (st.inE ? '<span class="sig sig-buy">COMPRA</span>' : '<span class="sig sig-flat">Fuera</span>') };
   box.innerHTML = `<div class="row"><h2>Resultados</h2><span class="muted" style="font-size:.8rem">La estrategia supera a comprar y mantener en <b>${beat} de ${tot}</b> casos (activo × plazo).</span></div>
-    <p class="sub">Retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H) en el mismo plazo. Cada plazo parte sin posición. La columna "Hoy" dice qué indica la regla con la última vela. Clic en una fila para ver el detalle.</p>
+    <p class="sub">Retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H) en el mismo plazo${cfg.cur === 'CLP' && cacheT.USDCLP ? ', medidos en pesos chilenos: incluyen la variación del dólar. Las señales usan el precio en dólares' : cfg.cur === 'CLP' ? ', en dólares porque todavía no está descargado el valor del dólar en pesos' : ', en dólares'}. Cada plazo parte sin posición. La columna "Hoy" dice qué indica la regla con la última vela. Clic en una fila para ver el detalle.</p>
     <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Hoy</th>${W.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
     ${ts.map(t => `<tr data-t="${t}" ${cfg.sel === t ? 'style="background:var(--accent-soft)"' : ''}><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t] || '')}</span></td><td style="text-align:left">${nowTxt(labRes[t])}</td>${W.map(([k]) => cell(labRes[t].res[k])).join('')}</tr>`).join('')}
     ${ts.length > 1 ? `<tr style="cursor:default;font-weight:600"><td>Promedio</td><td></td>${W.map(([k]) => avg[k] ? `<td><span class="num ${cls(avg[k].ret)}">${pct(avg[k].ret)}</span><span class="rb">B&amp;H ${pct(avg[k].bh)}</span></td>` : '<td>–</td>').join('')}</tr>` : ''}
@@ -645,6 +660,7 @@ async function labCompute() {
   labDetail();
 }
 
+const i0Of = r => r.i0;
 function labDetail() {
   const box = document.getElementById('ldet'); const cfg = LAB, t = cfg.sel, R = labRes[t];
   clearCharts();
@@ -655,7 +671,7 @@ function labDetail() {
   const pN = x => x == null ? '–' : pct(x);
   box.innerHTML = `<div class="row"><h2>${t} <span class="muted" style="font-size:.85rem;font-weight:400">${esc(RUBRO[t] || '')}</span></h2>
     <div class="seg" id="lwin">${W.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === cfg.win}">${l}</button>`).join('')}</div></div>
-    <p class="sub">Desde ${fdate(r.from)} hasta ${fdate(S.d[S.d.length - 1])}, con velas ${cfg.tf === 'd' ? 'diarias' : 'semanales'}.</p>
+    <p class="sub">Desde ${fdate(r.from)} hasta ${fdate(S.d[S.d.length - 1])}, con velas ${cfg.tf === 'd' ? 'diarias' : 'semanales'}. Gráfico de precios en dólares; rentabilidades en ${cfg.cur === 'CLP' && R.K ? `pesos (dólar de ${fmt(R.K[i0Of(r)], 0)} a ${fmt(R.K[R.K.length - 1], 0)})` : 'dólares'}.</p>
     <div class="chart" id="lpc" style="height:380px"></div>
     <div class="legend" id="lleg"></div>
     <div class="grid2" style="margin-top:16px"><div><p class="sub" style="margin:0 0 4px">Capital de la estrategia vs comprar y mantener (base 100)</p><div class="chart sm" id="lec" style="height:200px"></div></div>
@@ -676,7 +692,8 @@ function labDetail() {
   ch.timeScale().fitContent();
   const ec = mk(box.querySelector('#lec'));
   const es = ec.addLineSeries({ color: css('--accent'), lineWidth: 2, priceLineVisible: false }); es.setData(r.eq.map((v, j) => ({ time: ds[j], value: v * 100 })));
-  const bh = ec.addLineSeries({ color: css('--muted'), lineWidth: 1, lineStyle: 2, priceLineVisible: false }); bh.setData(ds.map((d, j) => ({ time: d, value: S.c[i0 + j] / S.o[i0] * 100 })));
+  const kk = j => R.K ? R.K[i0 + j] / R.K[i0] : 1;
+  const bh = ec.addLineSeries({ color: css('--muted'), lineWidth: 1, lineStyle: 2, priceLineVisible: false }); bh.setData(ds.map((d, j) => ({ time: d, value: S.c[i0 + j] * kk(j) / S.o[i0] * 100 })));
   ec.timeScale().fitContent();
 }
 
@@ -693,7 +710,7 @@ async function load(){
   ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);return true}
 async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
 if(!window.LightweightCharts){document.getElementById('view').innerHTML='<p class="empty">No se pudo cargar la librería de gráficos. Recarga la página.</p>';return}
-getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,300000)});
+getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,120000)});
 })();
 </script>
 

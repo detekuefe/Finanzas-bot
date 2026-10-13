@@ -4,7 +4,7 @@
 - data/intra/<TICKER>.json  velas de 5 minutos por sesión, con premarket (se acumulan)
 - data/summary.json         último precio, cierre previo y cierres recientes de cada activo
 
-Lo ejecuta la acción "Actualizar datos" de GitHub cada 15 minutos en horario de mercado.
+Lo ejecuta la acción "Actualizar datos" de GitHub cada 5 minutos en horario de mercado.
 """
 import json
 import os
@@ -15,8 +15,11 @@ import pandas as pd
 import yfinance as yf
 
 TICKERS = ["QQQ", "NVDA", "AMD", "INTC", "MU", "SNDK", "WDC", "STX", "NTAP", "DELL",
-           "FLEX", "AEHR", "AXTI", "DDOG", "ASTS", "LUNR", "SPCX", "HYMC", "MP"]
-MACRO = {"US10Y": "^TNX", "BRENT": "BZ=F", "VIX": "^VIX"}
+           "FLEX", "AEHR", "AXTI", "DDOG", "ASTS", "LUNR", "SPCX", "HYMC", "MP",
+           "ACWI", "SP500", "NASDAQ"]
+# Nombre en la app -> símbolo en Yahoo, cuando no son iguales
+SYMBOL = {"SP500": "^GSPC", "NASDAQ": "^IXIC"}
+MACRO = {"US10Y": "^TNX", "BRENT": "BZ=F", "VIX": "^VIX", "USDCLP": "CLP=X"}
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 KEEP_INTRA_DAYS = 250
 
@@ -82,19 +85,23 @@ def download(symbols, **kw):
         return None
 
 
+def ysym(t):
+    return SYMBOL.get(t, t)
+
+
 def main():
-    symbols = TICKERS + list(MACRO.values())
+    symbols = [ysym(t) for t in TICKERS] + list(MACRO.values())
     first_run = not os.path.exists(os.path.join(DATA, "summary.json"))
     daily_all = download(symbols, period="2y", interval="1d")
     weekly_all = download(symbols, period="10y", interval="1wk")
-    intra_all = download(TICKERS, period="60d" if first_run else "5d", interval="5m", prepost=True)
+    intra_all = download([ysym(t) for t in TICKERS], period="60d" if first_run else "5d", interval="5m", prepost=True)
 
     summary = load(os.path.join(DATA, "summary.json"), {"tickers": {}, "macro": {}})
     ok = 0
     for t in TICKERS:
         path = os.path.join(DATA, f"{t}.json")
         doc = load(path, {"daily": [], "weekly": []})
-        d, w = frame_for(daily_all, t), frame_for(weekly_all, t)
+        d, w = frame_for(daily_all, ysym(t)), frame_for(weekly_all, ysym(t))
         if d is not None:
             doc["daily"] = merge(doc["daily"], bars(d))
             ok += 1
@@ -104,7 +111,7 @@ def main():
 
         ipath = os.path.join(DATA, "intra", f"{t}.json")
         idoc = load(ipath, {"days": {}})
-        i = frame_for(intra_all, t)
+        i = frame_for(intra_all, ysym(t))
         if i is not None:
             local = i.index.tz_convert("America/New_York")
             for day, part in i.groupby(local.date):
@@ -126,6 +133,16 @@ def main():
         d = frame_for(daily_all, sym)
         if d is not None:
             summary["macro"][name] = [[r[0], r[4]] for r in bars(d)[-260:]]
+
+    # Dólar en pesos chilenos con toda su historia, para ver rentabilidades en CLP
+    fx_path = os.path.join(DATA, "USDCLP.json")
+    fx = load(fx_path, {"daily": [], "weekly": []})
+    d, w = frame_for(daily_all, MACRO["USDCLP"]), frame_for(weekly_all, MACRO["USDCLP"])
+    if d is not None:
+        fx["daily"] = merge(fx["daily"], bars(d))
+    if w is not None:
+        fx["weekly"] = bars(w)
+    save(fx_path, fx)
 
     summary["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save(os.path.join(DATA, "summary.json"), summary)
