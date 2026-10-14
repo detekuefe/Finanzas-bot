@@ -1,4 +1,4 @@
-"""Descarga 3 años de cierres diarios ajustados (incluyen dividendos) de un universo amplio de acciones:
+"""Descarga 4 años de cierres diarios ajustados (incluyen dividendos) de un universo amplio de acciones:
 los miembros del Nasdaq-100 y las mayores empresas del S&P 500, más SPY y QQQ como referencias.
 
 La lista es la composición actual de los índices: las empresas que salieron en el camino no están
@@ -25,7 +25,7 @@ DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
 def main():
     tickers = list(dict.fromkeys(REFS + NASDAQ100 + SP500))
-    df = yf.download(tickers, period="3y", interval="1d", auto_adjust=True, progress=False, threads=True)
+    df = yf.download(tickers, period="4y", interval="1d", auto_adjust=True, progress=False, threads=True)
     close = df["Close"].dropna(how="all")
     dates = [d.strftime("%Y-%m-%d") for d in close.index]
     out = {"dates": dates, "nasdaq100": [], "sp500": [], "closes": {}}
