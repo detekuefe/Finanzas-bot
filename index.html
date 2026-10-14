@@ -187,7 +187,7 @@ function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
-function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
+function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`,`<a href="#momentum" ${cur==='momentum'?'aria-current="page"':''}>Momentum</a>`,`<a href="#buzon" ${cur==='buzon'?'aria-current="page"':''}>Buzón${unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
 let charts=[],obs=[];
 function clearCharts(){obs.forEach(o=>o.disconnect());obs=[];charts.forEach(c=>{try{c.remove()}catch(e){}});charts=[]}
 function baseOpts(el,extra={}){return Object.assign({width:el.clientWidth,height:el.clientHeight,layout:{background:{type:'solid',color:css('--panel')},textColor:css('--muted'),fontFamily:'IBM Plex Mono, monospace',fontSize:11},grid:{vertLines:{color:css('--grid')},horzLines:{color:css('--grid')}},rightPriceScale:{borderColor:css('--line'),minimumWidth:78},timeScale:{borderColor:css('--line')},crosshair:{mode:0},localization:{locale:'es-CL',priceFormatter:p=>fmt(p,2)}},extra)}
@@ -940,18 +940,98 @@ function renderConnors(view, tabs) {
   rerender = () => { };
 }
 
+// ---------- Estrategia momentum (data/momentum.json, scripts/momentum.py) y buzón de alertas (data/alerts_log.json) ----------
+let MOM = null, mmWin = '1a', mmSel = null, LOG = [];
+const MM_REG = { d: 'Filtro diario', m: 'Filtro mensual', no: 'Sin filtro' };
+const actPill = a => `<span class="sig ${a === 'buy' ? 'sig-buy' : 'sig-sell'}">${a === 'buy' ? 'COMPRA' : 'VENTA'}</span>`;
+const tkLink = t => ORDER.includes(t) ? '#' + t : '#momentum';
+function mmName(r) { return `${r.n} acciones · momentum ${MOM.scores[r.score]} · ${MM_REG[r.regime].toLowerCase()}` }
+async function renderMomentum(view) {
+  if (!MOM) { view.innerHTML = '<p class="empty">Cargando estrategia…</p>'; try { MOM = await getJSON('data/momentum.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay datos de la estrategia. Se calculan con la próxima actualización diaria.</p>'; return } if (curRoute !== 'momentum') return }
+  const S = MOM.state, R = S.regime, W = MOM.windows[mmWin], B = W.bh, dk = MOM.default;
+  const rows = [...W.rows].sort((a, b) => b.ret - a.ret), def = rows.find(r => r.k === dk);
+  if (!rows.some(r => r.k === mmSel)) mmSel = dk;
+  const sel = rows.find(r => r.k === mmSel);
+  const last = MOM.events[MOM.events.length - 1];
+  const beat = rows.filter(r => r.ret > B.SPY.ret).length;
+  const top = new Set(S.top.slice(0, 10).map(x => x.t)), hold = new Set(S.holding.map(x => x.t));
+  const card = (t, a, sub, dashed) => `<a class="alert ${a === 'buy' ? 'a-buy' : 'a-sell'}" href="${tkLink(t)}" style="${dashed ? 'border-style:dashed;' : ''}min-width:130px"><span style="font-size:1.15rem"><b>${esc(t)}</b> ${actPill(a)}</span><span class="rb">${sub}</span></a>`;
+  const whyTxt = { mes: 'rebalanceo mensual', mercado: R.ok ? 'el mercado volvió sobre su media de 200 días' : 'el mercado cayó bajo su media de 200 días', inicio: 'inicio del backtest' };
+  view.innerHTML = `<section class="panel"><div class="row"><div><h2>Estrategia momentum: las 10 más fuertes con filtro de mercado</h2>
+    <p class="sub">El primer día hábil de cada mes, al cierre, se ordenan ${MOM.universe} acciones (Nasdaq-100 y las mayores del S&P 500) por su retorno promedio de 3, 6 y 12 meses, y se compran en partes iguales las 10 primeras; las que salen del grupo se venden. Si SPY cierra bajo su media de 200 días se vende todo y se espera en efectivo; se vuelve a comprar el día que cierra de nuevo sobre ella. Precios ajustados por dividendos, en dólares, al ${fdate(S.date)}.</p></div><a class="btn" href="#buzon" style="text-decoration:none;white-space:nowrap">Buzón de alertas${unreadCount() ? ` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>` : ''}</a></div>
+    <div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(${R.ok ? '--up' : '--down'})"><b>${R.ok ? 'Mercado alcista: la regla está invertida.' : 'Mercado bajista: la regla está en efectivo.'}</b> SPY cerró en ${fmt(R.spy)} y su media de 200 días está en ${fmt(R.sma200)} (${pct(R.dist)}).${R.ok ? ` Si SPY cae bajo ${fmt(R.sma200)} al cierre, la alerta será vender todo.` : ''}</div>
+    <h3 style="margin:14px 0 6px">Última señal: ${last ? `${fdate(last.d)}, ${whyTxt[last.why]}` : 'sin señales'}</h3>
+    ${last && (last.buy.length || last.sell.length) ? `<div class="alerts">${last.buy.map(t => card(t, 'buy', 'Entra a la cartera')).join('')}${last.sell.map(t => card(t, 'sell', 'Sale de la cartera')).join('')}</div>` : '<p class="muted" style="margin:0">Sin cambios.</p>'}
+    <h3 style="margin:14px 0 6px">Si el mes cambiara hoy</h3>
+    ${S.preview.buy.length || S.preview.sell.length ? `<div class="alerts">${S.preview.buy.map(t => card(t, 'buy', 'Entraría (aún no es señal)', 1)).join('')}${S.preview.sell.map(t => card(t, 'sell', 'Saldría (aún no es señal)', 1)).join('')}</div>` : '<p class="muted" style="margin:0">La cartera no cambiaría.</p>'}
+    <p class="note" style="margin-top:6px">Las señales se confirman al cierre del primer día hábil del mes (o el día que SPY cruza su media) y se ejecutan en la apertura siguiente. Cada compra y venta llega al buzón y por correo.</p></section>
+  <section class="panel"><h2>Cartera actual</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Puesto hoy</th><th>Desde</th><th>Retorno desde la entrada</th><th style="text-align:left">Estado</th></tr></thead><tbody>
+    ${S.holding.length ? S.holding.map(h => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(h.t)}"><span class="tk">${esc(h.t)}</span></a></td><td class="num">${h.rank || '–'}</td><td class="num">${fdate(h.since)}</td><td class="num ${cls(h.ret)}">${pct(h.ret)}</td><td style="text-align:left">${top.has(h.t) ? '<span class="sig sig-long">Sigue entre las 10</span>' : '<span class="sig sig-flat">Hoy saldría</span>'}</td></tr>`).join('') : '<tr><td colspan="5" class="muted">En efectivo.</td></tr>'}
+    </tbody></table></div></section>
+  <section class="panel"><div class="row"><h2>Backtest frente a comprar y mantener</h2><span class="seg" id="mmw"><button data-v="1a" aria-pressed="${mmWin === '1a'}">1 año</button><button data-v="2a" aria-pressed="${mmWin === '2a'}">2 años</button></span></div>
+    <p class="sub">Del ${fdate(W.from)} al ${fdate(W.to)}, ${W.universe} acciones con al menos 12 meses de historia al inicio. Costo de 0,05% por compra o venta.</p>
+    <p class="note" style="margin-bottom:10px"><b>La regla propuesta rindió ${pct(def.ret)} (caída máx. ${pct(def.dd)}) contra ${pct(B.SPY.ret)} de SPY (caída ${pct(B.SPY.dd)}) y ${pct(B.QQQ.ret)} de QQQ (caída ${pct(B.QQQ.dd)}).</b> Comprar todo el universo en igual peso rindió ${pct(B.EW.ret)}. ${beat} de ${rows.length} variantes superan a SPY; solo ${B.beat_spy} de las ${B.n} acciones individuales lo superaron.</p>
+    <p class="sub" style="margin:0 0 4px">Crecimiento de $100: <b>${esc(mmName(sel))}</b>. Toca una fila para cambiarla.</p><div class="chart" id="mmc"></div><div class="legend" id="mmleg"></div>
+    <div class="tablebox" style="margin-top:12px"><table><thead><tr><th>#</th><th style="text-align:left">Variante</th><th>Retorno</th><th>Caída máx.</th><th title="Diferencia de capital final frente a SPY">vs SPY</th><th>En efectivo</th><th>Operaciones</th></tr></thead><tbody>
+    ${[{ k: '_spy', name: 'Comprar y mantener SPY', ...B.SPY }, { k: '_qqq', name: 'Comprar y mantener QQQ', ...B.QQQ }, { k: '_ew', name: 'Todo el universo en igual peso', ...B.EW }].concat(rows).sort((a, b) => b.ret - a.ret).map((r, i) => `<tr data-k="${r.k}" style="${r.k === mmSel ? 'background:rgba(127,127,127,.12);' : ''}${r.k[0] === '_' || r.k === dk ? 'font-weight:600' : ''}"><td class="num muted">${i + 1}</td><td style="text-align:left;white-space:normal;min-width:220px">${r.k[0] === '_' ? esc(r.name) + '<span class="rb">Referencia</span>' : esc(mmName(r)) + (r.k === dk ? '<span class="rb">Regla propuesta</span>' : '')}</td>
+      <td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num">${pct(r.dd)}</td><td class="num ${cls((1 + r.ret) / (1 + B.SPY.ret) - 1)}">${r.k === '_spy' ? '–' : pct((1 + r.ret) / (1 + B.SPY.ret) - 1)}</td><td class="num">${r.cash == null ? '–' : fmt(r.cash * 100, 0) + '%'}</td><td class="num">${r.trades == null ? '–' : r.trades}</td></tr>`).join('')}
+    </tbody></table></div>
+    <p class="note"><b>Antes de confiar en esto.</b> El universo es la composición actual de los índices: no están las empresas que salieron por caer (sesgo de supervivencia), lo que infla cualquier backtest. Estos dos años premiaron mucho el momentum (memoria, chips, almacenamiento); en un cambio brusco de líderes la estrategia puede caer más que el índice, como muestra su caída máxima. El filtro de mercado reduce caídas largas pero en caídas rápidas vende tarde y recompra más arriba. El efectivo no rinde interés en el cálculo. Resultados pasados no garantizan resultados futuros.</p></section>
+  <section class="panel"><h2>Ranking de momentum hoy</h2><div class="tablebox"><table><thead><tr><th>#</th><th style="text-align:left">Acción</th><th>Puntaje</th><th>3 meses</th><th>6 meses</th><th>12 meses</th><th style="text-align:left"></th></tr></thead><tbody>
+    ${S.top.map(x => `<tr style="cursor:default${x.rank <= 10 ? ';font-weight:600' : ''}"><td class="num muted">${x.rank}</td><td style="text-align:left"><a href="${tkLink(x.t)}"><span class="tk">${esc(x.t)}</span></a></td><td class="num ${cls(x.score)}">${pct(x.score)}</td><td class="num ${cls(x.r3)}">${pct(x.r3)}</td><td class="num ${cls(x.r6)}">${pct(x.r6)}</td><td class="num ${cls(x.r12)}">${pct(x.r12)}</td><td style="text-align:left">${hold.has(x.t) ? '<span class="sig sig-long">En cartera</span>' : x.rank <= 10 ? '<span class="sig sig-buy">Entraría</span>' : ''}</td></tr>`).join('')}
+    </tbody></table></div></section>
+  <section class="panel"><h2>Historial de señales</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Fecha</th><th style="text-align:left">Motivo</th><th style="text-align:left">Compra</th><th style="text-align:left">Venta</th></tr></thead><tbody>
+    ${MOM.events.slice().reverse().map(e => `<tr style="cursor:default"><td style="text-align:left">${fdate(e.d)}</td><td style="text-align:left">${{ mes: 'Rebalanceo mensual', mercado: e.buy.length ? 'Mercado sobre su media' : 'Mercado bajo su media', inicio: 'Inicio' }[e.why]}</td><td style="text-align:left;white-space:normal" class="up">${e.buy.map(esc).join(', ') || '–'}</td><td style="text-align:left;white-space:normal" class="down">${e.sell.map(esc).join(', ') || '–'}</td></tr>`).join('')}
+    </tbody></table></div></section>`;
+  const ch = mk(view.querySelector('#mmc'), { rightPriceScale: { mode: 1 } }), T = W.dates;
+  const ser = [[mmName(sel), sel.eq, css('--accent'), 2.5], ['SPY', B.SPY.eq, '#d0661b', 1.5], ['QQQ', B.QQQ.eq, '#2a9bb0', 1.5], ['Universo igual peso', B.EW.eq, '#888', 1.5]];
+  ser.forEach(([n, eq, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(eq.map((v, i) => ({ time: T[i], value: v * 100 }))) });
+  ch.timeScale().fitContent();
+  view.querySelector('#mmleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
+  view.querySelector('#mmw').onclick = e => { const b = e.target.closest('button'); if (!b) return; mmWin = b.dataset.v; clearCharts(); renderMomentum(view) };
+  view.querySelectorAll('tbody tr[data-k]').forEach(tr => tr.onclick = () => { if (tr.dataset.k[0] === '_') return; mmSel = tr.dataset.k; const y = window.scrollY; clearCharts(); renderMomentum(view); window.scrollTo(0, y) });
+  rerender = () => { };
+}
+// Buzón: el estado de leído se guarda solo en este navegador
+let bzFilter = 'all';
+function seenKeys() { try { return new Set(JSON.parse(localStorage.getItem('buzonSeen') || '[]')) } catch (e) { return new Set() } }
+function saveSeen(s) { try { localStorage.setItem('buzonSeen', JSON.stringify([...s].slice(-3000))) } catch (e) { } }
+function unreadCount() { const s = seenKeys(); return LOG.filter(a => !s.has(a.key)).length }
+const SRC = { momentum: 'Momentum top 10', ichimoku: 'Ichimoku', medias: 'EMA 9/18 vs SMA 30' };
+function renderBuzon(view) {
+  const seen = seenKeys();
+  const L = LOG.filter(a => bzFilter === 'all' || (bzFilter === 'buy' || bzFilter === 'sell' ? a.a === bzFilter : a.src === bzFilter)).slice().sort((a, b) => b.d.localeCompare(a.d) || a.t.localeCompare(b.t));
+  const days = [...new Set(L.map(a => a.d))];
+  const nU = LOG.filter(a => !seen.has(a.key)).length;
+  view.innerHTML = `<section class="panel"><div class="row"><div><h2>Buzón de alertas</h2><p class="sub">Todas las señales de compra y venta, de la más nueva a la más antigua: la estrategia momentum y las de Ichimoku y medias de cada activo. Se registran al cierre y también llegan por correo. ${nU ? `<b>${nU} sin leer.</b>` : 'Todo leído.'}</p></div>
+    <span style="display:flex;gap:6px;flex-wrap:wrap">${'Notification' in window ? `<button class="btn" id="bzn">${Notification.permission === 'granted' ? 'Avisos del navegador activados' : 'Avisarme en este navegador'}</button>` : ''}<button class="btn" id="bzr" ${nU ? '' : 'disabled'}>Marcar todo como leído</button></span></div>
+    <div class="lab-top"><span class="seg" id="bzf" style="flex-wrap:wrap">${[['all', 'Todas'], ['buy', 'Compras'], ['sell', 'Ventas'], ['momentum', 'Momentum'], ['ichimoku', 'Ichimoku'], ['medias', 'Medias']].map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === bzFilter}">${l}</button>`).join('')}</span></div>
+    ${days.length ? days.map(d => `<h3 style="margin:14px 0 6px">${fdate(d)}</h3><div class="alerts">${L.filter(a => a.d === d).map(a => `<a class="alert ${a.a === 'buy' ? 'a-buy' : 'a-sell'}" data-key="${esc(a.key)}" href="${a.src === 'momentum' ? '#momentum' : tkLink(a.t)}" style="min-width:180px${seen.has(a.key) ? ';opacity:.75' : ''}"><span style="font-size:1.15rem"><b>${esc(a.t)}</b> ${actPill(a.a)}${seen.has(a.key) ? '' : ' <span class="sig sig-long" style="padding:0 5px">Nueva</span>'}</span><span class="rb">${esc(SRC[a.src] || a.src)} · ${esc(a.txt)}</span></a>`).join('')}</div>`).join('') : '<p class="muted">No hay alertas con este filtro.</p>'}
+    </section>`;
+  view.querySelector('#bzf').onclick = e => { const b = e.target.closest('button'); if (!b) return; bzFilter = b.dataset.v; renderBuzon(view) };
+  view.querySelector('#bzr').onclick = () => { LOG.forEach(a => seen.add(a.key)); saveSeen(seen); renderNav(curRoute); renderBuzon(view) };
+  const bn = view.querySelector('#bzn'); if (bn) bn.onclick = () => Notification.requestPermission().then(() => renderBuzon(view));
+  view.querySelectorAll('a[data-key]').forEach(el => el.addEventListener('click', () => { seen.add(el.dataset.key); saveSeen(seen) }));
+  rerender = () => renderBuzon(view);
+}
+async function loadLog() {
+  const prev = new Set(LOG.map(a => a.key)), first = !LOG.length;
+  try { LOG = await getJSON('data/alerts_log.json') } catch (e) { return }
+  try { if (!first && 'Notification' in window && Notification.permission === 'granted') for (const a of LOG) if (!prev.has(a.key)) new Notification(`${a.t}: ${a.a === 'buy' ? 'COMPRA' : 'VENTA'}`, { body: `${SRC[a.src] || a.src}. ${a.txt}` }) } catch (e) { }
+}
+
 let rerender=()=>{},curRoute=null;
-function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
+function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'||h==='momentum'||h==='buzon'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
   document.getElementById('asof').textContent='al '+fdate(ORDER.map(x=>M[x].lastDate).sort().pop());
-  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else renderAsset(v,t)}
+  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}
 new MutationObserver(rerun).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 async function load(){
   try{SUM=await getJSON('data/summary.json')}catch(e){setStatus('bad','Aún no hay datos. En GitHub, abre la pestaña Actions y ejecuta "Actualizar datos".');document.getElementById('view').innerHTML='<p class="empty">Sin datos todavía.</p>';return false}
-  ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);return true}
-async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
+  ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);await loadLog();return true}
+async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
 if(!window.LightweightCharts){document.getElementById('view').innerHTML='<p class="empty">No se pudo cargar la librería de gráficos. Recarga la página.</p>';return}
 getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,120000)});
 })();

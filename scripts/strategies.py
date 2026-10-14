@@ -280,6 +280,12 @@ def write_alerts(out):
     except (OSError, ValueError):
         sent = []
     names = {"ichimoku": "Ichimoku", "medias": "EMA 9/18 vs SMA 30"}
+    log_path = os.path.join(DATA, "alerts_log.json")
+    try:
+        with open(log_path) as f:
+            log = json.load(f)
+    except (OSError, ValueError):
+        log = []
     lines = []
     for t, v in out["tickers"].items():
         for k in ("ichimoku", "medias"):
@@ -291,11 +297,15 @@ def write_alerts(out):
                 continue
             sent.append(key)
             accion = "COMPRA" if st["code"] == "buy_new" else "VENTA"
+            log.append({"key": key, "d": st["date"], "t": t, "src": k, "a": "buy" if st["code"] == "buy_new" else "sell",
+                        "txt": st["detail"]})
             lines.append(f"- **{t}** · {names[k]}: **{accion}** en la próxima apertura. {st['detail']}.")
     if not lines:
         return
     with open(sent_path, "w") as f:
         json.dump(sent[-2000:], f)
+    with open(log_path, "w") as f:  # buzón de alertas de la app
+        json.dump(log[-3000:], f, separators=(",", ":"))
     with open(os.path.join(DATA, "..", "alertas.md"), "w") as f:
         f.write(f"Señales al cierre del {now.date().isoformat()}:\n\n" + "\n".join(lines) + "\n")
 
