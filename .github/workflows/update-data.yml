@@ -38,6 +38,9 @@ jobs:
       - name: Ranking de combinaciones del laboratorio (una vez al día, al cierre)
         if: github.event.schedule == '30 22 * * 1-5' || github.event_name != 'schedule'
         run: node scripts/ranking.js
+      - name: Carteras que buscan ganarle a comprar y mantener (una vez al día, al cierre)
+        if: github.event.schedule == '30 22 * * 1-5' || github.event_name != 'schedule'
+        run: python scripts/portfolio.py
       - name: Avisar señales nuevas por correo (issue)
         if: hashFiles('alertas.md') != ''
         env:

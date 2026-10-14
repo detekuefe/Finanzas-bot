@@ -187,7 +187,7 @@ function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
-function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
+function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
 let charts=[],obs=[];
 function clearCharts(){obs.forEach(o=>o.disconnect());obs=[];charts.forEach(c=>{try{c.remove()}catch(e){}});charts=[]}
 function baseOpts(el,extra={}){return Object.assign({width:el.clientWidth,height:el.clientHeight,layout:{background:{type:'solid',color:css('--panel')},textColor:css('--muted'),fontFamily:'IBM Plex Mono, monospace',fontSize:11},grid:{vertLines:{color:css('--grid')},horzLines:{color:css('--grid')}},rightPriceScale:{borderColor:css('--line'),minimumWidth:78},timeScale:{borderColor:css('--line')},crosshair:{mode:0},localization:{locale:'es-CL',priceFormatter:p=>fmt(p,2)}},extra)}
@@ -868,10 +868,82 @@ async function renderRanking(view) {
   rerender = () => { };
 }
 
+// ---------- Carteras: estrategias que buscan ganarle a comprar y mantener (data/portfolio.json, scripts/portfolio.py) ----------
+let PORT = null, ptTab = 'cart', ptWin = '10a', ptUni = 'ix', ptSel = null, ptCw = '12m';
+const PT_WINS = [['10a', '10 años'], ['5a', '5 años'], ['3a', '3 años'], ['2a', '2 años'], ['1a', '1 año'], ['2020', 'Año 2020'], ['2022', 'Año 2022']];
+const PT_NAMES = { SP500: 'S&P 500', NASDAQ: 'Nasdaq', ACWI: 'ACWI', QQQ: 'QQQ' };
+async function renderCarteras(view) {
+  if (!PORT) { view.innerHTML = '<p class="empty">Cargando carteras…</p>'; try { PORT = await getJSON('data/portfolio.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay carteras calculadas.</p>'; return } if (curRoute !== 'carteras') return }
+  const tabs = `<span class="seg" id="ptt"><button data-v="cart" aria-pressed="${ptTab === 'cart'}">Carteras mensuales (10 años)</button><button data-v="con" aria-pressed="${ptTab === 'con'}">Connors RSI(2) diario</button></span>`;
+  if (ptTab === 'con') return renderConnors(view, tabs);
+  const W = PORT.weekly.windows[ptWin], sp = W.bhIdx.SP500, qq = W.bhIdx.QQQ, cur = /^\d+a$/.test(ptWin);
+  const rows = W.rows.filter(r => ptUni === 'ix' ? r.k.startsWith('ix_') : !r.k.startsWith('ix_')).sort((a, b) => b.ret - a.ret);
+  const ew = rows.find(r => r.k === (ptUni === 'ix' ? 'ix_ew' : 'ew'));
+  if (!rows.some(r => r.k === ptSel)) ptSel = rows.find(r => r.k !== ew.k).k;
+  const sel = rows.find(r => r.k === ptSel);
+  const bestBh = Object.entries(W.bh).sort((a, b) => b[1] - a[1])[0];
+  const bSp = rows.filter(r => r.ret > sp.ret).length, bEw = rows.filter(r => r !== ew && r.ret > ew.ret).length;
+  const bRisk = rows.filter(r => r.ret > sp.ret && r.dd >= sp.dd).length;
+  const name = t => PT_NAMES[t] || t;
+  view.innerHTML = `<section class="panel"><h2>Carteras que buscan ganarle a comprar y mantener</h2>
+    <p class="sub">Estrategias de cartera con revisión a fin de mes: rotación por momentum, momentum dual, tendencia de Faber y filtro de régimen. Se compara con comprar y mantener el S&P 500, cada activo y una cartera de igual peso. Cierres mensuales de ${W.universe.length} activos, de ${W.from} a ${W.to}, con un costo de 0,05% por cada compra o venta. Resultados en dólares.</p>
+    <div class="lab-top">${tabs}</div>
+    <div class="lab-top"><span class="seg" id="ptu"><button data-v="ix" aria-pressed="${ptUni === 'ix'}">Solo índices</button><button data-v="all" aria-pressed="${ptUni === 'all'}">Todos los activos</button></span>
+      <span class="seg" id="ptw" style="flex-wrap:wrap">${PT_WINS.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === ptWin}">${l}</button>`).join('')}</span></div>
+    <p class="note" style="margin-bottom:10px"><b>${bSp} de ${rows.length} estrategias rinden más que el S&P 500 (${pct(sp.ret)}, caída máx. ${pct(sp.dd)})${bRisk ? `, y ${bRisk} lo logran sin caer más que él` : ''}.</b> ${ptUni === 'ix' ? `QQQ rindió ${pct(qq && qq.ret)} con caída de ${pct(qq && qq.dd)}; los índices en igual peso, ${pct(ew.ret)}.` : `La cartera de igual peso rindió ${pct(ew.ret)} (caída ${pct(ew.dd)}) y ${bEw} estrategias la superan. El mejor activo fue ${esc(bestBh[0])} con ${pct(bestBh[1])}.`}</p>
+    ${ptUni === 'all' ? `<p class="note" style="margin-bottom:10px;border-left:3px solid var(--down);padding-left:8px"><b>Sesgo de selección.</b> Estos activos se eligieron hoy, sabiendo cuáles subieron (AXTI, SNDK, MU…). Una rotación que compra "los que más subieron" en esta lista hereda ese sesgo y por eso muestra retornos de miles por ciento que no se podían conseguir en tiempo real. La vista "Solo índices" evita el problema.</p>` : ''}
+    <div><p class="sub" style="margin:0 0 4px">Crecimiento de $100: <b>${esc(sel.name)}</b> frente a S&P 500${ptUni === 'ix' ? ' y QQQ' : ''} e igual peso. Toca una fila para cambiarla. Escala logarítmica.</p><div class="chart" id="pc"></div><div class="legend" id="pleg"></div></div>
+    <div class="tablebox" style="margin-top:12px"><table><thead><tr><th>#</th><th style="text-align:left">Estrategia</th><th>Retorno</th><th>Anual</th><th>Caída máx.</th><th title="Retorno mensual promedio dividido por su volatilidad, anualizado">Sharpe</th><th title="Diferencia de capital final frente al S&P 500">vs S&P 500</th>${cur ? '<th style="text-align:left">Tendría este mes</th>' : ''}</tr></thead><tbody>
+    ${[{ k: '_sp', name: 'Comprar y mantener S&P 500', group: 'Referencia', ...sp, now: ['SP500'] }].concat(ptUni === 'ix' && qq ? [{ k: '_qq', name: 'Comprar y mantener QQQ', group: 'Referencia', ...qq, now: ['QQQ'] }] : [], rows).sort((a, b) => b.ret - a.ret).map((r, i) => {
+      const ref = r.k[0] === '_' || r === ew;
+      return `<tr data-k="${r.k}" style="${r.k === ptSel ? 'background:var(--hover,rgba(127,127,127,.12))' : ''}${ref ? ';font-weight:600' : ''}"><td class="num muted">${i + 1}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(r.name)}<span class="rb">${esc(r.group)}</span></td>
+      <td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.cagr)}">${pct(r.cagr)}</td><td class="num">${pct(r.dd)}</td><td class="num">${r.sharpe == null ? '–' : fmt(r.sharpe, 2)}</td>
+      <td class="num ${cls((1 + r.ret) / (1 + sp.ret) - 1)}">${r.k === '_sp' ? '–' : pct((1 + r.ret) / (1 + sp.ret) - 1)}</td>${cur ? `<td style="text-align:left;white-space:normal">${r.now && r.now.length ? r.now.map(name).map(esc).join(', ') : '<span class="muted">Efectivo</span>'}</td>` : ''}</tr>` }).join('')}
+    </tbody></table></div>
+    <p class="note"><b>Qué hace cada una.</b> <b>Rotación</b>: a fin de mes compra en partes iguales los N activos con mejor retorno de los últimos meses y vende el resto. "+ solo si 12 meses > 0" deja en efectivo los elegidos que vienen cayendo en el año (momentum absoluto). "+ S&P 500 sobre su media de 10 meses" pasa todo a efectivo cuando el mercado está en tendencia bajista (filtro de régimen). <b>Momentum dual</b> (Antonacci): todo en el mejor de S&P 500, Nasdaq y ACWI a 12 meses, o efectivo si ese retorno es negativo. <b>Faber</b>: cada activo pesa lo mismo y solo se mantiene si cerró el mes sobre su media de 10 meses. La columna "Tendría este mes" es lo que la regla indica comprar con el último cierre mensual. El efectivo no rinde interés en el cálculo, lo que perjudica un poco a las estrategias que salen del mercado.</p>
+    <p class="note"><b>Cuidado con el sobreajuste.</b> Se prueban muchas variantes sobre los mismos datos; la primera de la tabla en parte tuvo suerte. Pesa más la que gana en varios plazos. Resultados pasados no garantizan resultados futuros.</p></section>`;
+  const ch = mk(view.querySelector('#pc'), { rightPriceScale: { mode: 1 } }), T = W.months.map(m => m + '-28');
+  const ser = [[sel.name, sel.eq, css('--accent'), 2.5], ['S&P 500', sp.eq, '#d0661b', 1.5], [ew.name, ew.eq, '#888', 1.5]].concat(ptUni === 'ix' && qq ? [['QQQ', qq.eq, '#2a9bb0', 1.5]] : []);
+  ser.forEach(([n, eq, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(eq.map((v, i) => ({ time: T[i], value: v * 100 }))) });
+  ch.timeScale().fitContent();
+  view.querySelector('#pleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
+  view.querySelector('#ptt').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptTab = b.dataset.v; clearCharts(); renderCarteras(view) };
+  view.querySelector('#ptu').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptUni = b.dataset.v; clearCharts(); renderCarteras(view) };
+  view.querySelector('#ptw').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptWin = b.dataset.v; clearCharts(); renderCarteras(view) };
+  view.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr'); if (!tr || tr.dataset.k[0] === '_') return; ptSel = tr.dataset.k; const y = window.scrollY; clearCharts(); renderCarteras(view); window.scrollTo(0, y) };
+  rerender = () => { };
+}
+function renderConnors(view, tabs) {
+  const C = PORT.connors, ts = Object.keys(C);
+  const wins = [['all', 'Todo el período'], ['12m', '12 meses'], ['6m', '6 meses']];
+  view.innerHTML = `<section class="panel"><h2>Reversión a la media de Connors con RSI(2)</h2>
+    <p class="sub">Velas diarias de los índices. Compra al cierre cuando el RSI de 2 días baja de 10 (o de 5) y el precio está sobre su media de 200 días; vende al cierre cuando el precio supera su media de 5 días. Como la media de 200 días necesita historia, el período completo empieza en ${fdate(C[ts[0]].all.from)}. Costo de 0,05% por operación, en dólares.</p>
+    <div class="lab-top">${tabs}<span class="seg" id="pcw">${wins.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === ptCw}">${l}</button>`).join('')}</span></div>
+    <div class="tablebox"><table><thead><tr><th style="text-align:left">Índice</th><th>Comprar y mantener</th><th>Caída</th><th>RSI(2) &lt; 10</th><th>Caída</th><th>Operaciones</th><th>Invertido</th><th>RSI(2) &lt; 5</th><th>Caída</th><th>Operaciones</th></tr></thead><tbody>
+    ${ts.map(t => { const x = C[t][ptCw]; if (!x) return ''; const a = x.rsi10, b = x.rsi5;
+      return `<tr style="cursor:default"><td style="text-align:left">${esc(PT_NAMES[t] || t)}</td><td class="num ${cls(x.bh.ret)}">${pct(x.bh.ret)}</td><td class="num">${pct(x.bh.dd)}</td>
+      <td class="num ${cls(a.ret)}">${pct(a.ret)}</td><td class="num">${pct(a.dd)}</td><td class="num">${a.trades}</td><td class="num">${fmt(a.expo * 100, 0)}%</td>
+      <td class="num ${cls(b.ret)}">${pct(b.ret)}</td><td class="num">${pct(b.dd)}</td><td class="num">${b.trades}</td></tr>` }).join('')}
+    </tbody></table></div>
+    <div class="chart" id="cc" style="margin-top:12px"></div><div class="legend" id="cleg"></div>
+    <p class="note"><b>Cómo leerlo.</b> La estrategia solo está invertida un 10–15% del tiempo, así que gana menos que comprar y mantener en un mercado que sube fuerte, pero con caídas mucho menores. Su atractivo es el retorno por día invertido: el resto del tiempo el dinero queda libre. El filtro de VIX bajo 25 no se aplica porque la app guarda menos de un año de historia del VIX. Resultados pasados no garantizan resultados futuros.</p></section>`;
+  const ch = mk(view.querySelector('#cc')), cols = ['#d0661b', '#2a9bb0', '#9b3fb5', '#0f8a5f'];
+  const leg = [];
+  ts.forEach((t, j) => { const x = C[t][ptCw]; if (!x) return; const D = x.dates;
+    const s1 = ch.addLineSeries({ color: cols[j], lineWidth: 2, priceLineVisible: false, lastValueVisible: false }); s1.setData(x.rsi10.eq.map((v, i) => ({ time: D[i], value: v * 100 })));
+    const s2 = ch.addLineSeries({ color: cols[j], lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }); s2.setData(x.bh.eq.map((v, i) => ({ time: D[i], value: v * 100 })));
+    leg.push(`<span><i style="background:${cols[j]}"></i>${esc(PT_NAMES[t] || t)}: RSI(2) &lt; 10 (línea) y comprar y mantener (punteada)</span>`) });
+  ch.timeScale().fitContent();
+  view.querySelector('#cleg').innerHTML = leg.join('');
+  view.querySelector('#ptt').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptTab = b.dataset.v; clearCharts(); renderCarteras(view) };
+  view.querySelector('#pcw').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptCw = b.dataset.v; clearCharts(); renderCarteras(view) };
+  rerender = () => { };
+}
+
 let rerender=()=>{},curRoute=null;
-function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
+function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
   document.getElementById('asof').textContent='al '+fdate(ORDER.map(x=>M[x].lastDate).sort().pop());
-  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else renderAsset(v,t)}
+  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else renderAsset(v,t)}
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}

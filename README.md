@@ -17,7 +17,7 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 | `data/USDCLP.json` | Dólar en pesos chilenos, diario (2 años) y semanal (10 años), para medir rentabilidades en pesos. |
 | `scripts/strategies.py` | Calcula las estrategias Ichimoku y EMA 9/18 vs SMA 30, el backtest y el estado de cada activo. Al cierre abre un issue con las señales nuevas (GitHub te avisa por correo). |
 | `data/signals.json`, `data/strat/` | Estado, backtest y series de cada estrategia. |
-| `scripts/ranking.js` → `data/ranking.json` | Prueba unas 100 combinaciones del Laboratorio en todos los activos (diario, 6 a 24 meses) y arma el ranking de la página `#ranking`. Corre una vez al día. |
+| `scripts/ranking.js` y `scripts/portfolio.py` → `data/ranking.json` | Prueba unas 100 combinaciones del Laboratorio en todos los activos (diario, 6 a 24 meses) y arma el ranking de la página `#ranking`. Corre una vez al día. |
 | `data/planilla.json` | Datos de la planilla original (precios anotados a mano de mayo a octubre de 2026). |
 
 ## Puesta en marcha (una sola vez)
