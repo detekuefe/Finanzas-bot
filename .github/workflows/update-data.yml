@@ -2,9 +2,9 @@ name: Actualizar datos
 
 on:
   schedule:
-    # Cada 5 minutos de lunes a viernes entre 08:00 y 17:55 de Nueva York (premarket y sesión).
+    # Cada 15 minutos de lunes a viernes entre 08:00 y 17:45 de Nueva York (premarket y sesión).
     # GitHub no garantiza la hora exacta: en momentos de alta demanda puede atrasarse unos minutos.
-    - cron: "*/5 12-21 * * 1-5"
+    - cron: "*/15 12-21 * * 1-5"
     # Cierre definitivo después de la sesión
     - cron: "30 22 * * 1-5"
   workflow_dispatch:
