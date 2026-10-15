@@ -187,7 +187,7 @@ function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
-function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`,`<a href="#momentum" ${cur==='momentum'?'aria-current="page"':''}>Momentum</a>`,`<a href="#buzon" ${cur==='buzon'?'aria-current="page"':''}>Buzón${unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
+function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`,`<a href="#momentum" ${cur==='momentum'?'aria-current="page"':''}>Momentum</a>`,`<a href="#paper" ${cur==='paper'?'aria-current="page"':''}>Simulación</a>`,`<a href="#buzon" ${cur==='buzon'?'aria-current="page"':''}>Buzón${unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
 let charts=[],obs=[];
 function clearCharts(){obs.forEach(o=>o.disconnect());obs=[];charts.forEach(c=>{try{c.remove()}catch(e){}});charts=[]}
 function baseOpts(el,extra={}){return Object.assign({width:el.clientWidth,height:el.clientHeight,layout:{background:{type:'solid',color:css('--panel')},textColor:css('--muted'),fontFamily:'IBM Plex Mono, monospace',fontSize:11},grid:{vertLines:{color:css('--grid')},horzLines:{color:css('--grid')}},rightPriceScale:{borderColor:css('--line'),minimumWidth:78},timeScale:{borderColor:css('--line')},crosshair:{mode:0},localization:{locale:'es-CL',priceFormatter:p=>fmt(p,2)}},extra)}
@@ -992,6 +992,44 @@ async function renderMomentum(view) {
   view.querySelectorAll('tbody tr[data-k]').forEach(tr => tr.onclick = () => { if (tr.dataset.k[0] === '_') return; mmSel = tr.dataset.k; const y = window.scrollY; clearCharts(); renderMomentum(view); window.scrollTo(0, y) });
   rerender = () => { };
 }
+// ---------- Simulación en Alpaca paper (data/alpaca_paper.json, scripts/alpaca_paper.py) ----------
+let PAP = null;
+const ORD_ST = { filled: 'Ejecutada', partially_filled: 'Parcial', accepted: 'En cola', new: 'En cola', pending_new: 'En cola', canceled: 'Cancelada', expired: 'Vencida', rejected: 'Rechazada' };
+async function renderPaper(view) {
+  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json') } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
+  const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
+  const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
+  const spyR = h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null, modR = h0.model && hl.model ? hl.model / h0.model - 1 : null;
+  const P = (PAP.positions || []).slice().sort((a, b) => b.value - a.value), O = PAP.orders || [], E = PAP.errors || [];
+  const invested = P.reduce((a, p) => a + p.value, 0), pl = P.reduce((a, p) => a + p.pl, 0);
+  view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
+    <p class="sub">Cuenta paper de Alpaca que replica cada día la <a href="#momentum">estrategia de momentum</a>: al cierre se envían las compras y ventas de la regla y se ejecutan en la apertura siguiente, con precios reales de mercado. Sirve para ver si en la práctica se comporta como el backtest antes de usar dinero real. Inicio: ${h0.d ? fdate(h0.d) : '–'} · actualizado ${esc(PAP.updated || '–')} (hora de Chile).</p>
+    <div class="hero" style="margin-top:10px">
+      <div class="stat"><b>Valor de la cuenta</b><span class="num" style="font-size:1.4rem">US$ ${fmt(eq)}</span></div>
+      <div class="stat"><b>Desde el inicio</b><span class="num ${cls(ret)}">${pct(ret)}</span></div>
+      <div class="stat"><b>SPY en el mismo periodo</b><span class="num ${cls(spyR)}">${pct(spyR)}</span></div>
+      <div class="stat"><b>Regla en el backtest</b><span class="num ${cls(modR)}">${pct(modR)}</span></div>
+      <div class="stat"><b>Invertido · efectivo</b><span class="num">${fmt(invested, 0)} · ${fmt(PAP.cash, 0)}</span></div>
+    </div>
+    ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
+    <h3 style="margin:14px 0 6px">Crecimiento de $100</h3>
+    ${H.length > 1 ? '<div class="chart" id="pac"></div><div class="legend" id="paleg"></div>' : `<p class="muted" style="margin:0">El gráfico se arma desde el segundo día de la simulación: cada cierre agrega un punto con el valor de la cuenta, SPY y la regla del backtest.</p>`}
+    <p class="note" style="margin-top:6px">Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p></section>
+  <section class="panel"><h2>Posiciones</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th>Ganancia</th><th>%</th></tr></thead><tbody>
+    ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="7" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
+    </tbody></table></div></section>
+  <section class="panel"><h2>Órdenes</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Enviada</th><th style="text-align:left">Acción</th><th style="text-align:left">Operación</th><th>Monto</th><th>Cantidad</th><th>Precio</th><th style="text-align:left">Estado</th></tr></thead><tbody>
+    ${O.length ? O.map(o => `<tr style="cursor:default"><td style="text-align:left">${fdate(o.d)}</td><td style="text-align:left"><span class="tk">${esc(o.t)}</span></td><td style="text-align:left">${actPill(o.side)}</td><td class="num">${o.usd == null ? 'Todo' : fmt(o.usd)}</td><td class="num">${o.qty ? fmt(o.qty, 4) : '–'}</td><td class="num">${o.price ? fmt(o.price) : '–'}</td><td style="text-align:left">${esc(ORD_ST[o.status] || o.status)}</td></tr>`).join('') : '<tr><td colspan="7" class="muted">Sin órdenes.</td></tr>'}
+    </tbody></table></div></section>`;
+  if (H.length > 1) {
+    const ch = mk(view.querySelector('#pac'));
+    const ser = [['Cuenta Alpaca', 'equity', css('--accent'), 2.5], ['SPY', 'spy', '#d0661b', 1.5], ['Regla en el backtest', 'model', '#888', 1.5]].filter(([, k]) => h0[k]);
+    ser.forEach(([n, k, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(H.filter(x => x[k]).map(x => ({ time: x.d, value: x[k] / h0[k] * 100 }))) });
+    ch.timeScale().fitContent();
+    view.querySelector('#paleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
+  }
+  rerender = () => { };
+}
 // Buzón: el estado de leído se guarda solo en este navegador
 let bzFilter = 'all';
 function seenKeys() { try { return new Set(JSON.parse(localStorage.getItem('buzonSeen') || '[]')) } catch (e) { return new Set() } }
@@ -1021,9 +1059,9 @@ async function loadLog() {
 }
 
 let rerender=()=>{},curRoute=null;
-function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'||h==='momentum'||h==='buzon'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
+function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'||h==='momentum'||h==='paper'||h==='buzon'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
   document.getElementById('asof').textContent='al '+fdate(ORDER.map(x=>M[x].lastDate).sort().pop());
-  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
+  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='paper')renderPaper(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}
