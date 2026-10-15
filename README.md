@@ -35,7 +35,7 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 3. En GitHub, **Settings → Secrets and variables → Actions → New repository secret**: crea `ALPACA_KEY_ID` y `ALPACA_SECRET_KEY` con esas claves.
 4. Desde ese día, la corrida de cierre (22:30 UTC) envía las órdenes. Para probar a mano: **Actions → Actualizar datos → Run workflow** después del cierre.
 
-**Botón de emergencia:** *Actions → Alpaca paper: pausar o reanudar → Run workflow* (o los botones de la página `#paper`). `vender_y_pausar` vende todo y deja de operar, `pausar` deja de operar sin vender y `reanudar` vuelve a seguir la regla en la próxima corrida de cierre.
+**Botón de emergencia:** *Actions → Alpaca paper: pausar o reanudar → Run workflow* (o los botones de la página `#paper`). `vender_y_pausar` vende todo y deja de operar, `pausar` deja de operar sin vender y `reanudar` (Iniciar bot) quita la pausa y alinea la cuenta con la regla de inmediato.
 
 **Impuestos:** `scripts/alpaca_tax.py` → `data/alpaca_tax.json` calcula cada venta (FIFO) con su ganancia en pesos al dólar observado de cada día y el costo reajustado por IPC (mindicador.cl), más dividendos y retenciones; la página `#paper` estima el Global Complementario según los otros ingresos que ingreses. Es una estimación de apoyo para el contador.
 

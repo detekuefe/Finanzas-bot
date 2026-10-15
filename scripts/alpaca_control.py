@@ -3,8 +3,8 @@
 - vender_y_pausar: cancela las órdenes pendientes, vende todas las posiciones a mercado (si el mercado está
   cerrado, la venta queda en cola para la apertura) y pausa: el script diario no vuelve a comprar.
 - pausar: deja las posiciones como están y deja de enviar órdenes.
-- reanudar: quita la pausa. En la próxima corrida de cierre la cuenta vuelve a seguir a la regla
-  (si está en efectivo, arma la cartera completa).
+- reanudar (iniciar): quita la pausa y la acción alinea la cuenta con la regla de inmediato
+  (si está en efectivo, arma la cartera completa; con el mercado cerrado, las órdenes quedan para la apertura).
 
 Guarda el estado en data/alpaca_control.json y la página #paper lo muestra.
 """
@@ -37,7 +37,7 @@ def main():
     with open(CONTROL, "w") as f:
         json.dump(ctl, f, separators=(",", ":"))
     print({"vender_y_pausar": "Vendido todo y pausado.", "pausar": "Pausado sin vender.",
-           "reanudar": "Reanudado: la próxima corrida de cierre vuelve a seguir a la regla."}[action])
+           "reanudar": "Reanudado: se alinea la cuenta con la regla."}[action])
 
     log = load(OUT, None)
     if log is not None:  # deja la página al día con las órdenes y posiciones nuevas

@@ -1010,10 +1010,10 @@ async function renderPaper(view) {
   view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
     <p class="sub">Cuenta paper de Alpaca que replica cada día la <a href="#momentum">estrategia de momentum</a>: al cierre se envían las compras y ventas de la regla y se ejecutan en la apertura siguiente, con precios reales de mercado. Sirve para ver si en la práctica se comporta como el backtest antes de usar dinero real. Inicio: ${h0.d ? fdate(h0.d) : '–'} · actualizado ${esc(PAP.updated || '–')} (hora de Chile).</p>
     <div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(${PCTL && PCTL.paused ? '--down' : '--up'})">${PCTL && PCTL.paused
-      ? `<b>Pausada desde el ${esc(PCTL.since)}${PCTL.action === 'vender_y_pausar' ? ', con todo vendido' : ', sin vender'}.</b> No se envían órdenes hasta reanudar; al reanudar, la próxima corrida de cierre vuelve a seguir a la regla.`
+      ? `<b>Pausada desde el ${esc(PCTL.since)}${PCTL.action === 'vender_y_pausar' ? ', con todo vendido' : ', sin vender'}.</b> No se envían órdenes hasta iniciarlo. Al iniciar, la cuenta compra de inmediato la cartera de la regla (con el mercado cerrado, en la apertura siguiente).`
       : '<b>Activa.</b> Cada cierre la cuenta se alinea con la regla.'}
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${PCTL && PCTL.paused
-        ? `<a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none">Reanudar</a>`
+        ? `<a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none;border-color:var(--up);color:var(--up)">${P.length ? 'Reanudar bot' : 'Iniciar bot'}</a>`
         : `<a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none;border-color:var(--down);color:var(--down)">Vender todo y pausar</a><a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none">Pausar sin vender</a>`}</div>
       <p class="note" style="margin:6px 0 0">El botón abre la acción en GitHub (hay que tener la sesión iniciada): toca <b>Run workflow</b>, elige <b>${PCTL && PCTL.paused ? 'reanudar' : 'vender_y_pausar</b> o <b>pausar'}</b> y confirma.${PCTL && PCTL.paused ? '' : ' Si el mercado está cerrado, la venta se ejecuta en la apertura.'}</p></div>
     <div class="hero" style="margin-top:10px">

@@ -38,6 +38,14 @@ jobs:
           ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         run: python scripts/alpaca_control.py "${{ inputs.accion }}"
+      # Al iniciar o reanudar, alinea la cuenta con la regla de inmediato: con el mercado abierto compra
+      # ahora; con el mercado cerrado las órdenes quedan para la apertura.
+      - name: Alinear la cuenta con la regla
+        if: inputs.accion == 'reanudar'
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: python scripts/alpaca_paper.py --force
       - name: Guardar estado en el repositorio
         run: |
           git config user.name "finanzas-bot"
