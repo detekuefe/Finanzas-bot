@@ -35,6 +35,8 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 3. En GitHub, **Settings → Secrets and variables → Actions → New repository secret**: crea `ALPACA_KEY_ID` y `ALPACA_SECRET_KEY` con esas claves.
 4. Desde ese día, la corrida de cierre (22:30 UTC) envía las órdenes. Para probar a mano: **Actions → Actualizar datos → Run workflow** después del cierre.
 
+**Botón de emergencia:** *Actions → Alpaca paper: pausar o reanudar → Run workflow* (o los botones de la página `#paper`). `vender_y_pausar` vende todo y deja de operar, `pausar` deja de operar sin vender y `reanudar` vuelve a seguir la regla en la próxima corrida de cierre.
+
 Sin los secrets, el paso solo muestra en el log de la acción las órdenes que enviaría. Para probarlo en tu computador: `python scripts/alpaca_paper.py --dry-run --force`.
 
 ## Agregar o quitar activos

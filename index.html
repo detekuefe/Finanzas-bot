@@ -993,10 +993,11 @@ async function renderMomentum(view) {
   rerender = () => { };
 }
 // ---------- Simulación en Alpaca paper (data/alpaca_paper.json, scripts/alpaca_paper.py) ----------
-let PAP = null;
+let PAP = null, PCTL = null;
+const CTL_URL = 'https://github.com/detekuefe/Finanzas-bot/actions/workflows/alpaca-control.yml';
 const ORD_ST = { filled: 'Ejecutada', partially_filled: 'Parcial', accepted: 'En cola', new: 'En cola', pending_new: 'En cola', canceled: 'Cancelada', expired: 'Vencida', rejected: 'Rechazada' };
 async function renderPaper(view) {
-  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json') } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
+  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
   const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
   const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
   const spyR = h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null, modR = h0.model && hl.model ? hl.model / h0.model - 1 : null;
@@ -1004,6 +1005,13 @@ async function renderPaper(view) {
   const invested = P.reduce((a, p) => a + p.value, 0), pl = P.reduce((a, p) => a + p.pl, 0);
   view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
     <p class="sub">Cuenta paper de Alpaca que replica cada día la <a href="#momentum">estrategia de momentum</a>: al cierre se envían las compras y ventas de la regla y se ejecutan en la apertura siguiente, con precios reales de mercado. Sirve para ver si en la práctica se comporta como el backtest antes de usar dinero real. Inicio: ${h0.d ? fdate(h0.d) : '–'} · actualizado ${esc(PAP.updated || '–')} (hora de Chile).</p>
+    <div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(${PCTL && PCTL.paused ? '--down' : '--up'})">${PCTL && PCTL.paused
+      ? `<b>Pausada desde el ${esc(PCTL.since)}${PCTL.action === 'vender_y_pausar' ? ', con todo vendido' : ', sin vender'}.</b> No se envían órdenes hasta reanudar; al reanudar, la próxima corrida de cierre vuelve a seguir a la regla.`
+      : '<b>Activa.</b> Cada cierre la cuenta se alinea con la regla.'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${PCTL && PCTL.paused
+        ? `<a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none">Reanudar</a>`
+        : `<a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none;border-color:var(--down);color:var(--down)">Vender todo y pausar</a><a class="btn" href="${CTL_URL}" target="_blank" rel="noopener" style="text-decoration:none">Pausar sin vender</a>`}</div>
+      <p class="note" style="margin:6px 0 0">El botón abre la acción en GitHub (hay que tener la sesión iniciada): toca <b>Run workflow</b>, elige <b>${PCTL && PCTL.paused ? 'reanudar' : 'vender_y_pausar</b> o <b>pausar'}</b> y confirma.${PCTL && PCTL.paused ? '' : ' Si el mercado está cerrado, la venta se ejecuta en la apertura.'}</p></div>
     <div class="hero" style="margin-top:10px">
       <div class="stat"><b>Valor de la cuenta</b><span class="num" style="font-size:1.4rem">US$ ${fmt(eq)}</span></div>
       <div class="stat"><b>Desde el inicio</b><span class="num ${cls(ret)}">${pct(ret)}</span></div>
