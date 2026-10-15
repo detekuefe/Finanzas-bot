@@ -4,7 +4,7 @@
 - data/intra/<TICKER>.json  velas de 5 minutos por sesión, con premarket (se acumulan)
 - data/summary.json         último precio, cierre previo y cierres recientes de cada activo
 
-Lo ejecuta la acción "Actualizar datos" de GitHub cada 5 minutos en horario de mercado.
+Lo ejecuta la acción "Actualizar datos" de GitHub cada 15 minutos en horario de mercado.
 """
 import json
 import os
