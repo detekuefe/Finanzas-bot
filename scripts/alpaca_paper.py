@@ -60,6 +60,20 @@ class Paper:
     def positions(self):
         return {p["symbol"]: float(p["market_value"]) for p in self.call("GET", "/v2/positions")}
 
+    def positions_detail(self):
+        return [{"t": p["symbol"], "qty": round(float(p["qty"]), 6), "avg": round(float(p["avg_entry_price"]), 2),
+                 "price": round(float(p["current_price"]), 2), "value": round(float(p["market_value"]), 2),
+                 "pl": round(float(p["unrealized_pl"]), 2), "plpc": round(float(p["unrealized_plpc"]), 4)}
+                for p in self.call("GET", "/v2/positions")]
+
+    def recent_orders(self):
+        def num(x):
+            return round(float(x), 6) if x not in (None, "") else None
+        return [{"d": o["submitted_at"][:10], "t": o["symbol"], "side": o["side"], "usd": num(o.get("notional")),
+                 "status": o["status"], "qty": num(o.get("filled_qty")), "price": num(o.get("filled_avg_price")),
+                 "filled": (o.get("filled_at") or "")[:10] or None}
+                for o in self.call("GET", "/v2/orders", params={"status": "all", "limit": 200, "direction": "desc"})]
+
     def cancel_open(self):
         self.call("DELETE", "/v2/orders")
 
@@ -143,15 +157,24 @@ def main():
 
     if dry:
         return
-    log = load(OUT, {"history": [], "orders": []})
+    # Registro para la página #paper: valor de la cuenta al cierre de cada día junto a SPY y a la regla
+    # simulada en el backtest, para comparar desde el primer día; más posiciones y órdenes con su estado.
+    u = load(os.path.join(DATA, "universe.json"), {})
+    spy = dict(zip(u.get("dates", []), u.get("closes", {}).get("SPY", [])))
+    w = (m.get("windows") or {}).get("2a") or {}
+    dflt = next((r for r in w.get("rows", []) if r["k"] == m.get("default")), None)
+    model = dflt["eq"][-1] if dflt and w.get("to") == st["date"] else None
+    log = load(OUT, {"history": []})
     log["updated"] = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
     log["history"] = [h for h in log["history"] if h["d"] != st["date"]] + [
-        {"d": st["date"], "equity": round(equity, 2), "cash": round(cash, 2)}]
-    log["positions"] = {s: round(v, 2) for s, v in positions.items()}
-    log["orders"] = (log["orders"] + [{"d": st["date"], **o} for o in sent])[-500:]
+        {"d": st["date"], "equity": round(equity, 2), "cash": round(cash, 2), "spy": spy.get(st["date"]), "model": model}]
+    log["cash"] = round(cash, 2)
+    log["equity"] = round(equity, 2)
+    log["positions"] = api.positions_detail()
+    log["orders"] = api.recent_orders()
+    log["errors"] = [{"d": st["date"], **o} for o in sent if "error" in o]
     with open(OUT, "w") as f:
         json.dump(log, f, separators=(",", ":"))
-
 
 if __name__ == "__main__":
     main()
