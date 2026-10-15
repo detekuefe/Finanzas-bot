@@ -179,7 +179,7 @@ const inCur=cl=>{const s=fxSum();return CUR==='CLP'&&s?cl.map(([d,c])=>[d,c*fxAt
 const curSeg=id=>`<div class="seg" id="${id}" title="Moneda en que se miden precios y rentabilidades"><button data-c="USD" aria-pressed="${CUR==='USD'}">Dólares</button><button data-c="CLP" aria-pressed="${CUR==='CLP'}">Pesos</button></div>`;
 const curCl=t=>t==='USDCLP'?SUM.tickers[t].closes:inCur(SUM.tickers[t].closes);
 function computeMetrics(){M={};for(const t of ORDER.concat(SUM.tickers.USDCLP?['USDCLP']:[])){const raw=SUM.tickers[t].closes,cl=curCl(t),cu=raw.map(x=>x[1]),c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(cu,20);const lb=SUM.tickers[t].lastBar;const fxl=CUR==='CLP'&&fxSum()?fxSum()[fxSum().length-1][1]:1;
-  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-60),lastBar:lb,price:lb?lb[4]*fxl:c[n-1]}}}
+  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-10),lastBar:lb,price:lb?lb[4]*fxl:c[n-1]}}}
 
 const led=document.getElementById('led'),smsg=document.getElementById('smsg');
 function setStatus(kind,msg){led.className='led '+kind;smsg.textContent=msg}
@@ -199,7 +199,7 @@ function sparkSvg(v){if(v.length<2)return'';const w=110,h=26,mn=Math.min(...v),m
 // ---------- Resumen ----------
 let sortKey='d1',sortDir=-1,perfRange=63;
 function renderSummary(view){
-  const cols=[['t','Activo'],['price','Precio'],['d1','Día'],['d5','5 días'],['d21','1 mes'],['y1','1 año'],['vsS20','vs SMA20'],['rsi','RSI 14'],['spark','Últimos 60 días']];
+  const cols=[['t','Activo'],['price','Precio'],['d1','Día'],['d5','5 días'],['d21','1 mes'],['y1','1 año'],['vsS20','vs SMA20'],['rsi','RSI 14'],['spark','Últimas 2 semanas']];
   const BOT=(SUM.bot||[]).filter(t=>ORDER.includes(t)),REF=['SP500','NASDAQ','QQQ','ACWI','USDCLP'].filter(t=>M[t]);
   const G={bot:BOT,ref:REF,oth:ORDER.filter(t=>!BOT.includes(t)&&!REF.includes(t))};
   const grpTable=(g,title,sub)=>!G[g].length?'':`${title?`<h3 style="margin:14px 0 2px">${title}</h3><p class="sub" style="margin:0 0 6px">${sub}</p>`:''}<div class="tablebox"><table><thead><tr>${cols.map(([k,l])=>`<th tabindex="0" data-k="${k}" ${k===sortKey?`aria-sort="${sortDir>0?'ascending':'descending'}"`:''}>${l}</th>`).join('')}</tr></thead><tbody data-g="${g}"></tbody></table></div>`;
