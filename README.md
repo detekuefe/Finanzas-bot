@@ -13,7 +13,7 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 | `.github/workflows/update-data.yml` | Ejecuta el script cada 15 minutos de lunes a viernes, en horario de mercado, y guarda los cambios. |
 | `data/<TICKER>.json` | Velas diarias (2 años, se acumulan) y semanales (10 años). |
 | `data/intra/<TICKER>.json` | Velas de 5 minutos por sesión, con premarket. Yahoo entrega 60 días; el repositorio los va acumulando. |
-| `data/summary.json` | Último precio y cierres recientes de cada activo, más VIX, tasa a 10 años, Brent y dólar en pesos. |
+| `data/summary.json` | Último precio y cierres recientes de cada activo, más VIX, tasa a 10 años, Brent y dólar en pesos. Incluye las acciones de la cartera del bot (`bot`: posiciones de Alpaca paper y cartera de la regla), que el Resumen muestra primero, junto a índices y dólar como referencia. |
 | `data/USDCLP.json` | Dólar en pesos chilenos, diario (2 años) y semanal (10 años), para medir rentabilidades en pesos. |
 | `scripts/strategies.py` | Calcula las estrategias Ichimoku y EMA 9/18 vs SMA 30, el backtest y el estado de cada activo. Al cierre abre un issue con las señales nuevas (GitHub te avisa por correo). |
 | `data/signals.json`, `data/strat/` | Estado, backtest y series de cada estrategia. |

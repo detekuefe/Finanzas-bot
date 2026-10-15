@@ -89,16 +89,27 @@ def ysym(t):
     return SYMBOL.get(t, t)
 
 
+def bot_tickers():
+    """Acciones de la cartera del bot: posiciones de la cuenta paper de Alpaca y cartera actual de la regla de
+    momentum. Se descargan igual que la lista fija para mostrarlas en el resumen."""
+    pap = load(os.path.join(DATA, "alpaca_paper.json"), {}) or {}
+    st = (load(os.path.join(DATA, "momentum.json"), {}) or {}).get("state") or {}
+    out = [p["t"] for p in pap.get("positions") or []] + [h["t"] for h in st.get("holding") or []]
+    return list(dict.fromkeys(t.replace(".", "-") for t in out))  # BRK.B en Alpaca es BRK-B en Yahoo
+
+
 def main():
-    symbols = [ysym(t) for t in TICKERS] + list(MACRO.values())
+    bot = bot_tickers()
+    tickers = TICKERS + [t for t in bot if t not in TICKERS]
+    symbols = [ysym(t) for t in tickers] + list(MACRO.values())
     first_run = not os.path.exists(os.path.join(DATA, "summary.json"))
     daily_all = download(symbols, period="2y", interval="1d")
     weekly_all = download(symbols, period="10y", interval="1wk")
-    intra_all = download([ysym(t) for t in TICKERS], period="60d" if first_run else "5d", interval="5m", prepost=True)
+    intra_all = download([ysym(t) for t in tickers], period="60d" if first_run else "5d", interval="5m", prepost=True)
 
     summary = load(os.path.join(DATA, "summary.json"), {"tickers": {}, "macro": {}})
     ok = 0
-    for t in TICKERS:
+    for t in tickers:
         path = os.path.join(DATA, f"{t}.json")
         doc = load(path, {"daily": [], "weekly": []})
         d, w = frame_for(daily_all, ysym(t)), frame_for(weekly_all, ysym(t))
@@ -144,9 +155,10 @@ def main():
         fx["weekly"] = bars(w)
     save(fx_path, fx)
 
+    summary["bot"] = bot
     summary["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     save(os.path.join(DATA, "summary.json"), summary)
-    print(f"Actualizados {ok} de {len(TICKERS)} activos")
+    print(f"Actualizados {ok} de {len(tickers)} activos ({len(bot)} de la cartera del bot)")
     if ok == 0:
         sys.exit("Yahoo Finance no devolvió datos")
 
