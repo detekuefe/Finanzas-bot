@@ -993,11 +993,15 @@ async function renderMomentum(view) {
   rerender = () => { };
 }
 // ---------- Simulación en Alpaca paper (data/alpaca_paper.json, scripts/alpaca_paper.py) ----------
-let PAP = null, PCTL = null;
+let PAP = null, PCTL = null, PTAX = null, taxYear = null;
+// Impuesto Global Complementario: tramos anuales en UTA (desde AT 2021)
+const IGC = [[13.5, 0], [30, .04], [50, .08], [70, .135], [90, .23], [120, .304], [310, .35], [Infinity, .40]];
+function igc(base, uta) { let t = 0, lo = 0; for (const [hi, r] of IGC) { const top = hi * uta; if (base > lo) t += (Math.min(base, top) - lo) * r; lo = top } return t }
+const clp = x => x == null || !isFinite(x) ? '–' : '$' + fmtInt(x);
 const CTL_URL = 'https://github.com/detekuefe/Finanzas-bot/actions/workflows/alpaca-control.yml';
 const ORD_ST = { filled: 'Ejecutada', partially_filled: 'Parcial', accepted: 'En cola', new: 'En cola', pending_new: 'En cola', canceled: 'Cancelada', expired: 'Vencida', rejected: 'Rechazada' };
 async function renderPaper(view) {
-  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
+  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})); PTAX = await getJSON('data/alpaca_tax.json').catch(() => null) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
   const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
   const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
   const spyR = h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null, modR = h0.model && hl.model ? hl.model / h0.model - 1 : null;
@@ -1022,21 +1026,64 @@ async function renderPaper(view) {
     ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
     <h3 style="margin:14px 0 6px">Crecimiento de $100</h3>
     ${H.length > 1 ? '<div class="chart" id="pac"></div><div class="legend" id="paleg"></div>' : `<p class="muted" style="margin:0">El gráfico se arma desde el segundo día de la simulación: cada cierre agrega un punto con el valor de la cuenta, SPY y la regla del backtest.</p>`}
-    <p class="note" style="margin-top:6px">Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p></section>
+    <p class="note" style="margin-top:6px">Las flechas marcan las compras y ventas ejecutadas. Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p></section>
   <section class="panel"><h2>Posiciones</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th>Ganancia</th><th>%</th></tr></thead><tbody>
     ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="7" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
     </tbody></table></div></section>
   <section class="panel"><h2>Órdenes</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Enviada</th><th style="text-align:left">Acción</th><th style="text-align:left">Operación</th><th>Monto</th><th>Cantidad</th><th>Precio</th><th style="text-align:left">Estado</th></tr></thead><tbody>
     ${O.length ? O.map(o => `<tr style="cursor:default"><td style="text-align:left">${fdate(o.d)}</td><td style="text-align:left"><span class="tk">${esc(o.t)}</span></td><td style="text-align:left">${actPill(o.side)}</td><td class="num">${o.usd == null ? 'Todo' : fmt(o.usd)}</td><td class="num">${o.qty ? fmt(o.qty, 4) : '–'}</td><td class="num">${o.price ? fmt(o.price) : '–'}</td><td style="text-align:left">${esc(ORD_ST[o.status] || o.status)}</td></tr>`).join('') : '<tr><td colspan="7" class="muted">Sin órdenes.</td></tr>'}
-    </tbody></table></div></section>`;
+    </tbody></table></div></section>
+  ${taxSection()}`;
+  bindTax(view);
   if (H.length > 1) {
     const ch = mk(view.querySelector('#pac'));
     const ser = [['Cuenta Alpaca', 'equity', css('--accent'), 2.5], ['SPY', 'spy', '#d0661b', 1.5], ['Regla en el backtest', 'model', '#888', 1.5]].filter(([, k]) => h0[k]);
-    ser.forEach(([n, k, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(H.filter(x => x[k]).map(x => ({ time: x.d, value: x[k] / h0[k] * 100 }))) });
+    const lines = ser.map(([n, k, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(H.filter(x => x[k]).map(x => ({ time: x.d, value: x[k] / h0[k] * 100 }))); return s });
+    // Hitos: compras y ventas ejecutadas, agrupadas por día (se marcan en el primer cierre registrado desde ese día)
+    const days = H.map(x => x.d), at = d => days.find(x => x >= d), mk2 = {};
+    O.filter(o => o.status === 'filled' || o.status === 'partially_filled').forEach(o => { const d = at(o.filled || o.d); if (!d) return; (mk2[d] = mk2[d] || { buy: [], sell: [] })[o.side === 'buy' ? 'buy' : 'sell'].push(o.t) });
+    const marks = [];
+    Object.keys(mk2).sort().forEach(d => { const m = mk2[d];
+      if (m.sell.length) marks.push({ time: d, position: 'aboveBar', color: css('--down') || '#c0392b', shape: 'arrowDown', text: 'Vende ' + m.sell.join(', ') });
+      if (m.buy.length) marks.push({ time: d, position: 'belowBar', color: css('--up') || '#1e8e3e', shape: 'arrowUp', text: m.buy.length > 4 ? 'Compra ' + m.buy.length + ' acciones' : 'Compra ' + m.buy.join(', ') }) });
+    if (PCTL && PCTL.since && PCTL.action) { const d = at(PCTL.since.slice(0, 10)); if (d) marks.push({ time: d, position: 'aboveBar', color: '#888', shape: 'square', text: PCTL.paused ? 'Pausa' : 'Reanuda' }) }
+    if (marks.length) lines[0].setMarkers(marks.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     ch.timeScale().fitContent();
     view.querySelector('#paleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
   }
   rerender = () => { };
+}
+function otherIncome() { try { return +localStorage.getItem('otrosIngresos') || 0 } catch (e) { return 0 } }
+function taxSection() {
+  const Y = PTAX && PTAX.years ? Object.keys(PTAX.years).sort() : [];
+  if (!Y.length) return `<section class="panel"><h2>Impuestos en Chile (estimación)</h2><p class="muted" style="margin:0">Aparece con la primera ejecución de la cuenta: cada venta con su ganancia en pesos y una estimación del impuesto para la Operación Renta.</p></section>`;
+  if (!Y.includes(taxYear)) taxYear = Y[Y.length - 1];
+  const T = PTAX.years[taxYear], other = otherIncome(), uta = T.uta;
+  const income = T.gain + T.dividends, base = Math.max(0, other + income);
+  const extra = uta ? igc(base, uta) - igc(Math.max(0, other), uta) : null;
+  const approx = T.sales.some(x => x.approx) || T.divs.some(x => x.approx) || !T.uta_final;
+  return `<section class="panel"><div class="row"><h2>Impuestos en Chile (estimación)</h2><span class="seg" id="taxy">${Y.map(y => `<button data-v="${y}" aria-pressed="${y === taxYear}">${y}</button>`).join('')}</span></div>
+    <p class="sub">Se declara en la Operación Renta de abril de ${+taxYear + 1} (Formulario 22). Cada venta se asigna a las compras más antiguas; la ganancia se calcula en pesos al dólar observado de cada día, con el costo reajustado por IPC. Las acciones extranjeras no tienen la exención de las chilenas, así que todo va al Impuesto Global Complementario.</p>
+    <div class="hero" style="margin-top:10px">
+      <div class="stat"><b>Ganancia de capital</b><span class="num ${cls(T.gain)}">${clp(T.gain)}</span><span class="rb">US$ ${fmt(T.gain_usd)} · ${T.sales.length} ventas</span></div>
+      <div class="stat"><b>Dividendos</b><span class="num">${clp(T.dividends)}</span><span class="rb">Retenido en EE.UU.: ${clp(T.withheld)}</span></div>
+      <div class="stat"><b>Renta a declarar</b><span class="num ${cls(income)}">${clp(income)}</span></div>
+      <div class="stat"><b>Impuesto adicional estimado</b><span class="num" style="font-size:1.4rem">${clp(extra)}</span><span class="rb">${extra != null && income > 0 ? 'tasa efectiva ' + fmt(extra / income * 100, 1) + '%' : ''}</span></div>
+    </div>
+    <label class="sub" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0">Tus otros ingresos del año en pesos (sueldo, honorarios, arriendos) <input id="taxo" type="number" min="0" step="100000" value="${other || ''}" placeholder="0" style="font:inherit;width:160px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:inherit"></label>
+    <p class="note" style="margin:0">El impuesto adicional es la diferencia del Global Complementario con y sin estas rentas, según tus otros ingresos (se guardan solo en este navegador). UTA ${clp(uta)}${T.uta_final ? '' : ' (provisoria, con la última UTM)'}. Si la ganancia es negativa, la pérdida rebaja la base. El impuesto retenido en EE.UU. sobre dividendos puede usarse en parte como crédito; aquí no se descuenta.${approx ? ' <b>Hay valores aproximados</b> (dólar de Yahoo, IPC aún no publicado o UTA provisoria).' : ''} Es una estimación de apoyo: confírmala con un contador.</p>
+    ${T.sales.length ? `<div class="tablebox" style="margin-top:12px"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Compra</th><th>Venta</th><th>Precio compra (US$)</th><th>Precio venta (US$)</th><th>Dólar compra</th><th>Dólar venta</th><th>Reajuste IPC</th><th>Costo ($)</th><th>Venta ($)</th><th>Ganancia ($)</th></tr></thead><tbody>
+      ${T.sales.map(x => `<tr style="cursor:default"><td style="text-align:left"><span class="tk">${esc(x.t)}</span>${x.approx ? ' <span class="muted" title="Valor aproximado">*</span>' : ''}</td><td class="num">${fmt(x.qty, 4)}</td><td class="num">${fdate(x.buy)}</td><td class="num">${fdate(x.sell)}</td><td class="num">${fmt(x.buy_px)}</td><td class="num">${fmt(x.sell_px)}</td><td class="num">${fmt(x.fx_buy)}</td><td class="num">${fmt(x.fx_sell)}</td><td class="num">${pct(x.ipc - 1)}</td><td class="num">${clp(x.cost)}</td><td class="num">${clp(x.proceeds)}</td><td class="num ${cls(x.gain)}">${clp(x.gain)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<p class="muted">Sin ventas este año.</p>'}
+    ${(PTAX.held || []).length ? `<h3 style="margin:14px 0 6px">Compras aún en cartera</h3><p class="sub" style="margin:0 0 4px">Con el dólar observado del día de cada compra, que será su costo al venderlas.</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Compra</th><th>Precio (US$)</th><th>Dólar observado</th><th>Costo ($)</th></tr></thead><tbody>
+      ${PTAX.held.map(x => `<tr style="cursor:default"><td style="text-align:left"><span class="tk">${esc(x.t)}</span>${x.official ? '' : ' <span class="muted" title="Dólar de Yahoo, aproximado">*</span>'}</td><td class="num">${fmt(x.qty, 4)}</td><td class="num">${fdate(x.buy)}</td><td class="num">${fmt(x.buy_px)}</td><td class="num">${fmt(x.fx_buy)}</td><td class="num">${clp(x.qty * x.buy_px * x.fx_buy)}</td></tr>`).join('')}
+    </tbody></table></div>` : ''}</section>`;
+}
+function bindTax(view) {
+  const y = view.querySelector('#taxy'), o = view.querySelector('#taxo');
+  const redo = () => { const yy = view.querySelector('#taxy'); if (!yy) return; const sec = yy.closest('section'), tmp = document.createElement('div'); tmp.innerHTML = taxSection(); sec.replaceWith(tmp.firstElementChild); bindTax(view) };
+  if (y) y.onclick = e => { const b = e.target.closest('button'); if (!b) return; taxYear = b.dataset.v; redo() };
+  if (o) o.onchange = () => { try { localStorage.setItem('otrosIngresos', String(Math.max(0, +o.value || 0))) } catch (e) { } o.onchange = null; setTimeout(redo) };
 }
 // Buzón: el estado de leído se guarda solo en este navegador
 let bzFilter = 'all';

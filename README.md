@@ -37,6 +37,8 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 
 **Botón de emergencia:** *Actions → Alpaca paper: pausar o reanudar → Run workflow* (o los botones de la página `#paper`). `vender_y_pausar` vende todo y deja de operar, `pausar` deja de operar sin vender y `reanudar` vuelve a seguir la regla en la próxima corrida de cierre.
 
+**Impuestos:** `scripts/alpaca_tax.py` → `data/alpaca_tax.json` calcula cada venta (FIFO) con su ganancia en pesos al dólar observado de cada día y el costo reajustado por IPC (mindicador.cl), más dividendos y retenciones; la página `#paper` estima el Global Complementario según los otros ingresos que ingreses. Es una estimación de apoyo para el contador.
+
 Sin los secrets, el paso solo muestra en el log de la acción las órdenes que enviaría. Para probarlo en tu computador: `python scripts/alpaca_paper.py --dry-run --force`.
 
 ## Agregar o quitar activos

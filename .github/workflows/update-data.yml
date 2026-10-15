@@ -55,6 +55,13 @@ jobs:
           ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         run: python scripts/alpaca_paper.py
+      - name: Ganancias y dividendos en pesos para la declaración (al cierre)
+        if: github.event.schedule == '30 22 * * 1-5' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: python scripts/alpaca_tax.py
       - name: Avisar señales nuevas por correo (issue)
         if: hashFiles('alertas.md') != ''
         env:
