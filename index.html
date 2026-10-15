@@ -1014,7 +1014,11 @@ async function renderPaper(view) {
   if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})); PTAX = await getJSON('data/alpaca_tax.json').catch(() => null) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
   const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
   const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
-  const spyR = h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null, qqqR = h0.qqq && hl.qqq ? hl.qqq / h0.qqq - 1 : null, vsQ = ret != null && qqqR != null ? (1 + ret) / (1 + qqqR) - 1 : null, modR = h0.model && hl.model ? hl.model / h0.model - 1 : null;
+  // Referencias desde el cierre del día de inicio hasta el último precio descargado (incluye el día en curso);
+  // el historial solo suma un punto por cierre, así que durante el día quedaría desfasado.
+  const live = t => { const T = SUM && SUM.tickers[t]; if (!T || !h0.d) return null; const b = fxAt(T.closes, h0.d), n = T.lastBar ? T.lastBar[4] : T.closes[T.closes.length - 1][1]; return b ? n / b - 1 : null };
+  const dayR = PAP.last_equity ? eq / PAP.last_equity - 1 : null;
+  const spyR = live('SP500') ?? (h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null), qqqR = live('QQQ') ?? (h0.qqq && hl.qqq ? hl.qqq / h0.qqq - 1 : null), vsQ = ret != null && qqqR != null ? (1 + ret) / (1 + qqqR) - 1 : null, modR = H.length > 1 && h0.model && hl.model ? hl.model / h0.model - 1 : null;
   const P = (PAP.positions || []).slice().sort((a, b) => b.value - a.value), O = PAP.orders || [], E = PAP.errors || [];
   const invested = P.reduce((a, p) => a + p.value, 0), pl = P.reduce((a, p) => a + p.pl, 0);
   view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
@@ -1029,18 +1033,19 @@ async function renderPaper(view) {
     <div class="hero" style="margin-top:10px">
       <div class="stat"><b>Valor de la cuenta</b><span class="num" style="font-size:1.4rem">US$ ${fmt(eq)}</span></div>
       <div class="stat"><b>Desde el inicio</b><span class="num ${cls(ret)}">${pct(ret)}</span></div>
+      <div class="stat"><b>Hoy</b><span class="num ${cls(dayR)}">${pct(dayR)}</span></div>
       <div class="stat"><b>Nasdaq-100 (QQQ), referencia</b><span class="num ${cls(qqqR)}">${pct(qqqR)}</span></div>
       <div class="stat"><b>Cuenta vs QQQ</b><span class="num ${cls(vsQ)}">${pct(vsQ)}</span></div>
-      <div class="stat"><b>SPY en el mismo periodo</b><span class="num ${cls(spyR)}">${pct(spyR)}</span></div>
-      <div class="stat"><b>Regla en el backtest</b><span class="num ${cls(modR)}">${pct(modR)}</span></div>
+      <div class="stat"><b>S&P 500 en el mismo periodo</b><span class="num ${cls(spyR)}">${pct(spyR)}</span></div>
+      <div class="stat"><b>Regla en el backtest</b><span class="num ${cls(modR)}">${modR == null ? '<span class="muted" style="font-size:.8rem">desde el 2.º cierre</span>' : pct(modR)}</span></div>
       <div class="stat"><b>Invertido · efectivo</b><span class="num">${fmt(invested, 0)} · ${fmt(PAP.cash, 0)}</span></div>
     </div>
     ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
     <h3 style="margin:14px 0 6px">Crecimiento de $100</h3>
     ${H.length > 1 ? '<div class="chart" id="pac"></div><div class="legend" id="paleg"></div>' : `<p class="muted" style="margin:0">El gráfico se arma desde el segundo día de la simulación: cada cierre agrega un punto con el valor de la cuenta, el Nasdaq-100 (QQQ), SPY y la regla del backtest.</p>`}
     <p class="note" style="margin-top:6px">Las flechas marcan las compras y ventas ejecutadas. Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p></section>
-  <section class="panel"><h2>Posiciones</h2><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th>Ganancia</th><th>%</th></tr></thead><tbody>
-    ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="7" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
+  <section class="panel"><h2>Posiciones</h2><p class="sub">"Hoy" es la variación desde el cierre de ayer, igual que "Día" en el Resumen. "Ganancia" y "%" se miden desde el precio de compra, así que pueden tener distinto signo: si una acción abrió con caída y se compró ahí, hoy puede ir en rojo y la posición en verde.</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th title="Variación desde el cierre de ayer">Hoy</th><th title="Desde el precio de compra">Ganancia</th><th title="Desde el precio de compra">%</th></tr></thead><tbody>
+    ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.day)}">${pct(p.day)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td></td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="8" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
     </tbody></table></div></section>
   <section class="panel"><h2>Órdenes en curso</h2>${ordTable(O.filter(o => ORD_OPEN.includes(o.status)), 'Sin órdenes en curso.')}</section>
   <section class="panel"><details><summary style="cursor:pointer"><h2 style="display:inline">Historial de movimientos</h2> <span class="muted">(${O.filter(o => !ORD_OPEN.includes(o.status)).length})</span></summary>
