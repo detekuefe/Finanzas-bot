@@ -46,6 +46,15 @@ jobs:
         run: |
           python scripts/fetch_universe.py
           if [ -f scripts/momentum.py ]; then python scripts/momentum.py; fi
+      # Cuenta de simulación (paper) de Alpaca. Sin los secrets ALPACA_KEY_ID y ALPACA_SECRET_KEY solo
+      # muestra las órdenes que enviaría. Nunca opera con dinero real: el script apunta fijo a paper.
+      - name: Replicar la estrategia de momentum en Alpaca paper (al cierre)
+        if: github.event.schedule == '30 22 * * 1-5' || github.event_name == 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: python scripts/alpaca_paper.py
       - name: Avisar señales nuevas por correo (issue)
         if: hashFiles('alertas.md') != ''
         env:

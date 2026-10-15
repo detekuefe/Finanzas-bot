@@ -19,6 +19,7 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 | `data/signals.json`, `data/strat/` | Estado, backtest y series de cada estrategia. |
 | `scripts/ranking.js` → `data/ranking.json` | Prueba unas 100 combinaciones del Laboratorio en todos los activos (diario, 6 a 24 meses) y arma el ranking de la página `#ranking`. Corre una vez al día. |
 | `scripts/portfolio.py` → `data/portfolio.json` | Carteras con revisión mensual (rotación por momentum, momentum dual, Faber, filtro de régimen) a 10 años, con todos los activos y solo con índices, más Connors RSI(2) diario en los índices. Página `#carteras`. Corre una vez al día. |
+| `scripts/alpaca_paper.py` → `data/alpaca_paper.json` | Replica la estrategia de momentum (top 10, filtro SPY sobre la media de 200) en una cuenta de **simulación** de Alpaca. Corre al cierre y envía órdenes a mercado para la próxima apertura. Apunta fijo al servidor paper: no puede operar dinero real. |
 | `data/planilla.json` | Datos de la planilla original (precios anotados a mano de mayo a octubre de 2026). |
 
 ## Puesta en marcha (una sola vez)
@@ -26,6 +27,15 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 1. **Settings → Pages**: en *Source* elige *GitHub Actions*. La acción publica la página después de cada descarga. (Con *Deploy from a branch* también funciona, pero GitHub limita esas publicaciones a unas 10 por hora.)
 2. **Actions → Actualizar datos → Run workflow** para la primera descarga.
 3. Abre la dirección que muestra Pages (`https://detekuefe.github.io/finanzas-bot/`).
+
+## Simulación con Alpaca (paper trading)
+
+1. Crea una cuenta en [alpaca.markets](https://alpaca.markets) y entra a la cuenta **Paper** (simulación, viene con 100.000 dólares ficticios). Usa una cuenta paper solo para esto: el script vende todo lo que no esté en la cartera de la regla.
+2. En la cuenta Paper, genera las claves de API (*API Keys → Generate*).
+3. En GitHub, **Settings → Secrets and variables → Actions → New repository secret**: crea `ALPACA_KEY_ID` y `ALPACA_SECRET_KEY` con esas claves.
+4. Desde ese día, la corrida de cierre (22:30 UTC) envía las órdenes. Para probar a mano: **Actions → Actualizar datos → Run workflow** después del cierre.
+
+Sin los secrets, el paso solo muestra en el log de la acción las órdenes que enviaría. Para probarlo en tu computador: `python scripts/alpaca_paper.py --dry-run --force`.
 
 ## Agregar o quitar activos
 
