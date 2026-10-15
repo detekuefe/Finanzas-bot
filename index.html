@@ -177,7 +177,8 @@ function fxAt(s,d){if(!s||!s.length)return null;let lo=0,hi=s.length-1;if(d<s[0]
 const fxSum=()=>(SUM&&SUM.macro&&SUM.macro.USDCLP)||null;
 const inCur=cl=>{const s=fxSum();return CUR==='CLP'&&s?cl.map(([d,c])=>[d,c*fxAt(s,d)]):cl};
 const curSeg=id=>`<div class="seg" id="${id}" title="Moneda en que se miden precios y rentabilidades"><button data-c="USD" aria-pressed="${CUR==='USD'}">Dólares</button><button data-c="CLP" aria-pressed="${CUR==='CLP'}">Pesos</button></div>`;
-function computeMetrics(){M={};for(const t of ORDER){const raw=SUM.tickers[t].closes,cl=inCur(raw),cu=raw.map(x=>x[1]),c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(cu,20);const lb=SUM.tickers[t].lastBar;const fxl=CUR==='CLP'&&fxSum()?fxSum()[fxSum().length-1][1]:1;
+const curCl=t=>t==='USDCLP'?SUM.tickers[t].closes:inCur(SUM.tickers[t].closes);
+function computeMetrics(){M={};for(const t of ORDER.concat(SUM.tickers.USDCLP?['USDCLP']:[])){const raw=SUM.tickers[t].closes,cl=curCl(t),cu=raw.map(x=>x[1]),c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(cu,20);const lb=SUM.tickers[t].lastBar;const fxl=CUR==='CLP'&&fxSum()?fxSum()[fxSum().length-1][1]:1;
   M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-60),lastBar:lb,price:lb?lb[4]*fxl:c[n-1]}}}
 
 const led=document.getElementById('led'),smsg=document.getElementById('smsg');
@@ -199,31 +200,36 @@ function sparkSvg(v){if(v.length<2)return'';const w=110,h=26,mn=Math.min(...v),m
 let sortKey='d1',sortDir=-1,perfRange=63;
 function renderSummary(view){
   const cols=[['t','Activo'],['price','Precio'],['d1','Día'],['d5','5 días'],['d21','1 mes'],['y1','1 año'],['vsS20','vs SMA20'],['rsi','RSI 14'],['spark','Últimos 60 días']];
+  const BOT=(SUM.bot||[]).filter(t=>ORDER.includes(t)),REF=['SP500','NASDAQ','QQQ','ACWI','USDCLP'].filter(t=>M[t]);
+  const G={bot:BOT,ref:REF,oth:ORDER.filter(t=>!BOT.includes(t)&&!REF.includes(t))};
+  const grpTable=(g,title,sub)=>!G[g].length?'':`${title?`<h3 style="margin:14px 0 2px">${title}</h3><p class="sub" style="margin:0 0 6px">${sub}</p>`:''}<div class="tablebox"><table><thead><tr>${cols.map(([k,l])=>`<th tabindex="0" data-k="${k}" ${k===sortKey?`aria-sort="${sortDir>0?'ascending':'descending'}"`:''}>${l}</th>`).join('')}</tr></thead><tbody data-g="${g}"></tbody></table></div>`;
   const mac=SUM.macro||{};const mv=k=>{const s=mac[k];if(!s||s.length<2)return'';const a=s[s.length-1][1],b=s[s.length-2][1];return`<div><span class="muted">${{US10Y:'Tasa 10 años EE.UU.',BRENT:'Brent',VIX:'VIX',USDCLP:'Dólar en pesos'}[k]}</span><span class="num">${fmt(a)} <span class="${cls(a/b-1)}">${pct(a/b-1)}</span></span></div>`};
   view.innerHTML=`
   <section class="panel"><div class="row"><h2>Desempeño de los activos</h2>${curSeg('cur')}</div><p class="sub">"Día" compara el último precio con el cierre anterior. ${CUR==='CLP'?'Precios y rentabilidades en pesos chilenos: incluyen la variación del dólar. RSI y SMA20 se calculan sobre el precio en dólares. ':''}Clic en una fila para abrir el activo.</p>
   <div class="levels" style="margin-bottom:12px">${['VIX','US10Y','BRENT','USDCLP'].map(mv).join('')}</div>
-  <div class="tablebox"><table><thead><tr>${cols.map(([k,l])=>`<th tabindex="0" data-k="${k}" ${k===sortKey?`aria-sort="${sortDir>0?'ascending':'descending'}"`:''}>${l}</th>`).join('')}</tr></thead><tbody></tbody></table></div></section>
+  ${grpTable('bot','Cartera del bot',`Acciones que tiene hoy la <a href="#paper">simulación en Alpaca</a> según la <a href="#momentum">estrategia de momentum</a>.`)}
+  ${grpTable('ref','Referencias','Índices y el dólar en pesos.')}
+  ${G.oth.length?`<details style="margin-top:14px"><summary style="cursor:pointer"><b>Otros activos seguidos</b> <span class="muted">(${G.oth.length})</span></summary>${grpTable('oth','','')}</details>`:''}</section>
   <div class="grid2">
-    <section class="panel"><div class="row"><div><h2>Rendimiento comparado</h2><p class="sub">Base 100 al inicio del período</p></div>
+    <section class="panel"><div class="row"><div><h2>Rendimiento comparado</h2><p class="sub">Cartera del bot y referencias, base 100 al inicio del período</p></div>
       <div class="seg" id="prange">${[[21,'1M'],[63,'3M'],[126,'6M'],[260,'1A']].map(([n,l])=>`<button data-n="${n}" aria-pressed="${n===perfRange}">${l}</button>`).join('')}</div></div>
       <div class="chart" id="perf"></div><div class="legend" id="perfleg"></div></section>
     <section class="panel"><h2>Ranking del período</h2><p class="sub" id="ranksub"></p><div class="bars" id="rank"></div></section>
   </div>`;
-  const tb=view.querySelector('tbody');
-  const drawRows=()=>{const rows=[...ORDER].sort((a,b)=>{if(sortKey==='t')return sortDir*a.localeCompare(b);const x=M[a][sortKey],y=M[b][sortKey];return sortDir*((x??-1e9)-(y??-1e9))});
-    tb.innerHTML=rows.map(t=>{const m=M[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t]||'')}</span></td>
+  const drawRows=()=>view.querySelectorAll('tbody[data-g]').forEach(tb=>{const rows=[...G[tb.dataset.g]].sort((a,b)=>{if(sortKey==='t')return sortDir*a.localeCompare(b);const x=M[a][sortKey],y=M[b][sortKey];return sortDir*((x??-1e9)-(y??-1e9))});
+    tb.innerHTML=rows.map(t=>{const m=M[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(t==='USDCLP'?'Dólar en pesos chilenos':RUBRO[t]||'')}</span></td>
     <td class="num">${fmt(m.price)}<span class="rb">${m.lastBar?fdate(new Date(m.lastBar[0]*1000).toISOString().slice(0,10))+' '+clTime(m.lastBar[0]):fdate(m.lastDate)}</span></td>
     <td class="num ${cls(m.d1)}">${pct(m.d1)}</td><td class="num ${cls(m.d5)}">${pct(m.d5)}</td><td class="num ${cls(m.d21)}">${pct(m.d21)}</td><td class="num ${cls(m.y1)}">${pct(m.y1)}</td>
     <td class="num ${cls(m.vsS20)}">${pct(m.vsS20)}</td>
     <td class="num">${m.rsi==null?'–':`<span class="pill ${m.rsi>70?'down':m.rsi<30?'up':'muted'}">${fmt(m.rsi,0)}</span>`}</td>
-    <td>${sparkSvg(m.spark)}</td></tr>`}).join('')};
+    <td>${sparkSvg(m.spark)}</td></tr>`}).join('')});
   drawRows();
   view.querySelectorAll('th').forEach(th=>{const go=()=>{const k=th.dataset.k;if(k==='spark')return;sortDir=k===sortKey?-sortDir:-1;sortKey=k;view.querySelectorAll('th').forEach(x=>x.removeAttribute('aria-sort'));th.setAttribute('aria-sort',sortDir>0?'ascending':'descending');drawRows()};th.onclick=go;th.onkeydown=e=>{if(e.key==='Enter')go()}});
-  tb.onclick=e=>{const tr=e.target.closest('tr');if(tr)location.hash=tr.dataset.t};
+  view.querySelectorAll('tbody[data-g]').forEach(tb=>tb.onclick=e=>{const tr=e.target.closest('tr');if(tr&&ORDER.includes(tr.dataset.t))location.hash=tr.dataset.t});
   const hidden=new Set();
   const drawPerf=()=>{clearCharts();const el=view.querySelector('#perf');const ch=mk(el);const leg=[];const rk=[];
-    ORDER.forEach((t,i)=>{const d=inCur(SUM.tickers[t].closes).slice(-perfRange);const b=d[0][1];const s=ch.addLineSeries({color:PALETTE[i%PALETTE.length],lineWidth:t==='QQQ'?3:1.5,priceLineVisible:false,lastValueVisible:false,visible:!hidden.has(t)});
+    const PL=BOT.concat(REF).length?BOT.concat(REF):ORDER;
+    PL.forEach((t,i)=>{const d=curCl(t).slice(-perfRange);const b=d[0][1];const s=ch.addLineSeries({color:PALETTE[i%PALETTE.length],lineWidth:t==='QQQ'?3:1.5,priceLineVisible:false,lastValueVisible:false,visible:!hidden.has(t)});
       s.setData(d.map(x=>({time:x[0],value:x[1]/b*100})));leg.push(`<span data-t="${t}" class="${hidden.has(t)?'off':''}"><i style="background:${PALETTE[i%PALETTE.length]}"></i>${t}</span>`);rk.push([t,d[d.length-1][1]/b-1])});
     ch.timeScale().fitContent();
     const lg=view.querySelector('#perfleg');lg.innerHTML=leg.join('');lg.onclick=e=>{const sp=e.target.closest('span');if(!sp)return;const t=sp.dataset.t;hidden.has(t)?hidden.delete(t):hidden.add(t);drawPerf()};
@@ -1128,10 +1134,14 @@ window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}
 new MutationObserver(rerun).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+// Lista fija de activos más las acciones de la cartera del bot (summary.bot); el dólar se agrega como fila del resumen
+function setOrder(){const has=t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1;
+  ORDER=ALL.concat((SUM.bot||[]).filter(t=>!ALL.includes(t))).filter(has);
+  if(SUM.macro&&SUM.macro.USDCLP&&SUM.macro.USDCLP.length>1)SUM.tickers.USDCLP={closes:SUM.macro.USDCLP,lastBar:null}}
 async function load(){
   try{SUM=await getJSON('data/summary.json')}catch(e){setStatus('bad','Aún no hay datos. En GitHub, abre la pestaña Actions y ejecuta "Actualizar datos".');document.getElementById('view').innerHTML='<p class="empty">Sin datos todavía.</p>';return false}
-  ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);await loadLog();return true}
-async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;ORDER=ALL.filter(t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tickers[t].closes.length>1);for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
+  setOrder();computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);await loadLog();return true}
+async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;setOrder();for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
 if(!window.LightweightCharts){document.getElementById('view').innerHTML='<p class="empty">No se pudo cargar la librería de gráficos. Recarga la página.</p>';return}
 getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,120000)});
 })();
