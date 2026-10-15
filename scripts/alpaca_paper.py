@@ -64,7 +64,8 @@ class Paper:
     def positions_detail(self):
         return [{"t": p["symbol"], "qty": round(float(p["qty"]), 6), "avg": round(float(p["avg_entry_price"]), 2),
                  "price": round(float(p["current_price"]), 2), "value": round(float(p["market_value"]), 2),
-                 "pl": round(float(p["unrealized_pl"]), 2), "plpc": round(float(p["unrealized_plpc"]), 4)}
+                 "pl": round(float(p["unrealized_pl"]), 2), "plpc": round(float(p["unrealized_plpc"]), 4),
+                 "day": round(float(p.get("change_today") or 0), 4)}
                 for p in self.call("GET", "/v2/positions")]
 
     def recent_orders(self):
@@ -116,6 +117,7 @@ def refresh_status():
     log = load(OUT, {"history": []})
     log["updated"] = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
     log["equity"], log["cash"] = round(float(acct["equity"]), 2), round(float(acct["cash"]), 2)
+    log["last_equity"] = round(float(acct.get("last_equity") or 0), 2) or None  # valor al cierre anterior
     log["positions"] = api.positions_detail()
     log["orders"] = api.recent_orders()
     with open(OUT, "w") as f:
