@@ -9,7 +9,7 @@ on:
         description: "Qué hacer"
         required: true
         type: choice
-        default: vender_y_pausar
+        default: pausar  # la opción que no vende nada, por si se confirma sin mirar
         options:
           - vender_y_pausar
           - pausar
