@@ -168,14 +168,17 @@ def main():
     # Registro para la página #paper: valor de la cuenta al cierre de cada día junto a SPY y a la regla
     # simulada en el backtest, para comparar desde el primer día; más posiciones y órdenes con su estado.
     u = load(os.path.join(DATA, "universe.json"), {})
-    spy = dict(zip(u.get("dates", []), u.get("closes", {}).get("SPY", [])))
+    ref = {t: dict(zip(u.get("dates", []), u.get("closes", {}).get(t, []))) for t in ("SPY", "QQQ")}
     w = (m.get("windows") or {}).get("2a") or {}
     dflt = next((r for r in w.get("rows", []) if r["k"] == m.get("default")), None)
     model = dflt["eq"][-1] if dflt and w.get("to") == st["date"] else None
     log = load(OUT, {"history": []})
     log["updated"] = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
     log["history"] = [h for h in log["history"] if h["d"] != st["date"]] + [
-        {"d": st["date"], "equity": round(equity, 2), "cash": round(cash, 2), "spy": spy.get(st["date"]), "model": model}]
+        {"d": st["date"], "equity": round(equity, 2), "cash": round(cash, 2), "spy": ref["SPY"].get(st["date"]),
+         "qqq": ref["QQQ"].get(st["date"]), "model": model}]
+    for h in log["history"]:  # días registrados antes de que se guardara QQQ
+        h.setdefault("qqq", ref["QQQ"].get(h["d"]))
     log["cash"] = round(cash, 2)
     log["equity"] = round(equity, 2)
     log["positions"] = api.positions_detail()
