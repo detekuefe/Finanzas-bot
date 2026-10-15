@@ -1005,6 +1005,30 @@ const IGC = [[13.5, 0], [30, .04], [50, .08], [70, .135], [90, .23], [120, .304]
 function igc(base, uta) { let t = 0, lo = 0; for (const [hi, r] of IGC) { const top = hi * uta; if (base > lo) t += (Math.min(base, top) - lo) * r; lo = top } return t }
 const clp = x => x == null || !isFinite(x) ? '–' : '$' + fmtInt(x);
 const CTL_URL = 'https://github.com/detekuefe/Finanzas-bot/actions/workflows/alpaca-control.yml';
+// Variación diaria de la cuenta (cierre a cierre del historial, más el día en curso) y de QQQ en los mismos días
+function paperDaily() {
+  const H = PAP.history || [], Q = SUM && SUM.tickers.QQQ; if (!Q || !H.length) return [];
+  const qd = Q.closes.map(x => x[0]), qc = Object.fromEntries(Q.closes);
+  const qRet = (d, now) => { const i = qd.indexOf(d), b = i > 0 ? Q.closes[i - 1][1] : null, n = now ?? qc[d]; return b && n ? n / b - 1 : null };
+  const out = [];
+  for (let i = 1; i < H.length; i++) out.push({ d: H[i].d, a: H[i].equity / H[i - 1].equity - 1, q: qRet(H[i].d) });
+  const last = H[H.length - 1], today = qd[qd.length - 1];
+  if (today > last.d && PAP.equity) out.push({ d: today, a: PAP.equity / last.equity - 1, q: qRet(today, Q.lastBar ? Q.lastBar[4] : null), live: true });
+  return out.slice(-40);
+}
+function dailySvg(R) {
+  const W = Math.round(Math.min(640, Math.max(300, innerWidth - 64))), H = 220, L = 44, top = 14, bot = 30, n = R.length, step = (W - L) / n, bw = Math.min(26, step * 0.36);
+  const mx = Math.max(0.005, ...R.flatMap(r => [Math.abs(r.a), Math.abs(r.q || 0)])) * 1.15;
+  const y0 = top + (H - top - bot) / 2, y = v => y0 - v / mx * (H - top - bot) / 2, lab = n * 90 <= W;
+  const bar = (x, v, c) => v == null ? '' : `<rect x="${x.toFixed(1)}" y="${Math.min(y(v), y0).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(y(v) - y0)).toFixed(1)}" fill="${c}" rx="2"><title>${pct(v)}</title></rect>`
+    + (lab ? `<text x="${(x + bw / 2).toFixed(1)}" y="${(v >= 0 ? y(v) - 4 : y(v) + 12).toFixed(1)}" text-anchor="middle" font-size="10" fill="currentColor">${pct(v)}</text>` : '');
+  const grid = [mx / 1.15, -mx / 1.15].map(v => `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${L - 4}" y="${y(v) + 3}" text-anchor="end" font-size="10" fill="var(--muted)">${pct(v)}</text>`).join('');
+  const every = Math.ceil(n / Math.floor(W / 80));
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:100%;color:var(--ink)" role="img" aria-label="Variación diaria de la cartera y de QQQ">${grid}
+    <line x1="${L}" x2="${W}" y1="${y0}" y2="${y0}" stroke="var(--line)"/>
+    ${R.map((r, i) => { const cx = L + step * i + step / 2; return bar(cx - bw - 1, r.a, css('--accent')) + bar(cx + 1, r.q, '#2a9bb0')
+      + ((i % every === 0 && n - 1 - i >= every / 2) || i === n - 1 ? `<text x="${i === n - 1 ? Math.min(cx + step / 2, W) : cx}" y="${H - 10}" text-anchor="${i === n - 1 ? 'end' : 'middle'}" font-size="10" fill="var(--muted)">${fdate(r.d).slice(0, 6)}${r.live ? ' (hoy)' : ''}</text>` : '') }).join('')}</svg>`;
+}
 const ORD_OPEN = ['new', 'accepted', 'pending_new', 'partially_filled'];
 const ordTable = (rows, empty) => `<div class="tablebox"><table><thead><tr><th style="text-align:left">Fecha</th><th style="text-align:left">Acción</th><th style="text-align:left">Operación</th><th style="text-align:left">Estado</th><th>Monto</th><th>Cantidad</th><th>Precio</th></tr></thead><tbody>
     ${rows.length ? rows.map(o => { const off = ['canceled', 'expired', 'rejected'].includes(o.status); return `<tr style="cursor:default${off ? ';opacity:.45' : ''}"><td style="text-align:left">${fdate(o.filled || o.d)}</td><td style="text-align:left"><span class="tk">${esc(o.t)}</span></td><td style="text-align:left">${actPill(o.side)}</td><td style="text-align:left;white-space:nowrap">${esc(ORD_ST[o.status] || o.status)}</td><td class="num">${o.usd == null ? 'Todo' : fmt(o.usd)}</td><td class="num">${o.qty ? fmt(o.qty, 4) : '–'}</td><td class="num">${o.price ? fmt(o.price) : '–'}</td></tr>` }).join('') : `<tr><td colspan="7" class="muted">${empty}</td></tr>`}
@@ -1043,7 +1067,9 @@ async function renderPaper(view) {
     ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
     <h3 style="margin:14px 0 6px">Crecimiento de $100</h3>
     ${H.length > 1 ? '<div class="chart" id="pac"></div><div class="legend" id="paleg"></div>' : `<p class="muted" style="margin:0">El gráfico se arma desde el segundo día de la simulación: cada cierre agrega un punto con el valor de la cuenta, el Nasdaq-100 (QQQ), SPY y la regla del backtest.</p>`}
-    <p class="note" style="margin-top:6px">Las flechas marcan las compras y ventas ejecutadas. Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p></section>
+    <p class="note" style="margin-top:6px">Las flechas marcan las compras y ventas ejecutadas. Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p>
+    <h3 style="margin:16px 0 6px">Variación diaria: cartera vs Nasdaq-100 (QQQ)</h3>
+    ${(() => { const R = paperDaily(); return R.length ? `<div class="legend" style="margin-bottom:4px"><span><i style="background:${css('--accent')}"></i>Cartera</span><span><i style="background:#2a9bb0"></i>QQQ</span></div>${dailySvg(R)}<p class="note" style="margin-top:4px">Cada par de barras es un día: cuánto subió o bajó la cartera y cuánto el Nasdaq-100, desde el cierre anterior. ${R.some(r => r.live) ? 'El último día está en curso y se actualiza cada 15 minutos. ' : ''}En ${R.filter(r => r.q != null && r.a > r.q).length} de ${R.filter(r => r.q != null).length} días la cartera le ganó a QQQ.</p>` : '<p class="muted" style="margin:0">Aparece desde el primer día con la cartera invertida.</p>' })()}</section>
   <section class="panel"><h2>Posiciones</h2><p class="sub">"Hoy" es la variación desde el cierre de ayer, igual que "Día" en el Resumen. "Ganancia" y "%" se miden desde el precio de compra, así que pueden tener distinto signo: si una acción abrió con caída y se compró ahí, hoy puede ir en rojo y la posición en verde.</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th title="Variación desde el cierre de ayer">Hoy</th><th title="Desde el precio de compra">Ganancia</th><th title="Desde el precio de compra">%</th></tr></thead><tbody>
     ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.day)}">${pct(p.day)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td></td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="8" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
     </tbody></table></div></section>
