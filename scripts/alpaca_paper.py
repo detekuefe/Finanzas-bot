@@ -26,6 +26,7 @@ import requests
 PAPER_URL = "https://paper-api.alpaca.markets"  # fijo a propósito: nunca la cuenta real
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 OUT = os.path.join(DATA, "alpaca_paper.json")
+CONTROL = os.path.join(DATA, "alpaca_control.json")  # pausa manual, ver scripts/alpaca_control.py
 N = 10
 MIN_ORDER = 1.0  # Alpaca no acepta órdenes fraccionadas de menos de 1 dólar
 DRIFT = 0.02  # en un rebalanceo, no toca posiciones que estén a menos de 2% de su peso objetivo
@@ -76,6 +77,9 @@ class Paper:
 
     def cancel_open(self):
         self.call("DELETE", "/v2/orders")
+
+    def close_all(self):
+        return self.call("DELETE", "/v2/positions", params={"cancel_orders": "true"})
 
     def close(self, sym):
         return self.call("DELETE", f"/v2/positions/{sym}")
@@ -135,17 +139,21 @@ def main():
         positions, equity, cash = api.positions(), float(acct["equity"]), float(acct["cash"])
     rebalance = rebalance or not positions  # primera vez: arma la cartera completa
     orders = plan(target, positions, equity, rebalance)
+    ctl = load(CONTROL, {})
+    if ctl.get("paused"):
+        print(f"Pausado desde el {ctl.get('since', '?')} ({ctl.get('action', '')}): no se envían órdenes hasta reanudar.")
+        orders = []
 
     print(f"Regla al {st['date']}: filtro de mercado {'activo (en acciones)' if st['regime']['ok'] else 'en efectivo'}; "
           f"cartera {', '.join(target) or 'ninguna'}{' · día de rebalanceo' if rebalance else ''}")
     print(f"Cuenta paper: valor {equity:,.2f} · efectivo {cash:,.2f} · {len(positions)} posiciones")
     for s, side, v in orders:
         print(f"  {'VENDE TODO' if side == 'close' else side.upper():10} {s:6} {v:12,.2f}")
-    if not orders:
+    if not orders and not ctl.get("paused"):
         print("  Sin órdenes: la cuenta ya sigue a la regla.")
 
     sent = []
-    if not dry:
+    if not dry and not ctl.get("paused"):  # en pausa no toca las ventas que dejó en cola la acción de pánico
         api.cancel_open()  # evita duplicar órdenes si el script corre dos veces antes de la apertura
         for s, side, v in orders:
             try:
