@@ -104,11 +104,34 @@ def plan(target, positions, equity, rebalance):
     return [o for o in orders if o[1] == "close" or o[2] >= MIN_ORDER]
 
 
+def refresh_status():
+    """Actualiza en el registro el valor, las posiciones y las órdenes de la cuenta, sin enviar órdenes ni
+    agregar un punto al historial (eso lo hace la corrida de cierre). Corre cada 15 minutos para que la página
+    muestre las ejecuciones y el valor del día."""
+    key, secret = os.environ.get("ALPACA_KEY_ID"), os.environ.get("ALPACA_SECRET_KEY")
+    if not (key and secret):
+        return
+    api = Paper(key, secret)
+    acct = api.account()
+    log = load(OUT, {"history": []})
+    log["updated"] = datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M")
+    log["equity"], log["cash"] = round(float(acct["equity"]), 2), round(float(acct["cash"]), 2)
+    log["positions"] = api.positions_detail()
+    log["orders"] = api.recent_orders()
+    with open(OUT, "w") as f:
+        json.dump(log, f, separators=(",", ":"))
+    print(f"Estado de la cuenta: valor {log['equity']:,.2f} · {len(log['positions'])} posiciones.")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="muestra las órdenes sin enviarlas")
     ap.add_argument("--force", action="store_true", help="opera aunque los datos no sean de hoy")
+    ap.add_argument("--status", action="store_true", help="solo actualiza valor, posiciones y órdenes; no opera")
     args = ap.parse_args()
+    if args.status:
+        refresh_status()
+        return
 
     m = load(os.path.join(DATA, "momentum.json"), None)
     if not m:
@@ -117,11 +140,14 @@ def main():
     now = datetime.now(ZoneInfo("America/New_York"))
     today = now.date().isoformat()
     if not args.force:
+        why = None
         if st["date"] != today:
-            print(f"El estado de la regla es del {st['date']} y hoy es {today} (feriado o datos atrasados): no se opera.")
-            return
-        if (now.hour, now.minute) < (16, 15):
-            print("El mercado no ha cerrado: la regla decide con el cierre, no se opera.")
+            why = f"El estado de la regla es del {st['date']} y hoy es {today} (aún no cierra, feriado o datos atrasados)"
+        elif (now.hour, now.minute) < (16, 15):
+            why = "El mercado no ha cerrado: la regla decide con el cierre"
+        if why:
+            print(f"{why}: no se opera, solo se actualiza el estado de la cuenta.")
+            refresh_status()
             return
     target = [to_alpaca(h["t"]) for h in st["holding"]]
     ev = m.get("events") or []
