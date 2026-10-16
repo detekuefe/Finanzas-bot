@@ -1,10 +1,10 @@
-"""Estrategia de momentum con filtro de mercado sobre el Nasdaq-100 y las mayores del S&P 500.
+"""Estrategia de momentum sobre el Nasdaq-100 y las mayores del S&P 500.
 
 Regla propuesta:
 - El primer día hábil de cada mes, al cierre, ordena las acciones por momentum (promedio del retorno
   de 3, 6 y 12 meses) y compra en partes iguales las 10 mejores; vende las que salieron del grupo.
-- Filtro de mercado: si SPY cierra bajo su media de 200 días, vende todo y queda en efectivo; vuelve a
-  comprar las 10 mejores el día que SPY cierra de nuevo sobre esa media.
+- Siempre invertida, sin filtro de mercado (Jaime lo eligió el 2026-10-16: entre 2018 y 2026 el filtro de
+  SPY sobre su media de 200 días rindió la mitad sin bajar mucho la caída máxima).
 Además prueba variantes (5/10/20 acciones, otras medidas de momentum, filtro diario, mensual o sin filtro)
 para ver si la regla elegida es robusta. Compara contra comprar y mantener SPY, QQQ y todo el universo
 en igual peso, a 1 y 2 años. Costo de 0,05% por compra o venta.
@@ -22,7 +22,7 @@ COST = 0.0005
 LB = {"1m": 21, "3m": 63, "6m": 126, "12m": 252}
 SCORES = {"mix": "promedio 3/6/12 meses", "12m": "12 meses", "6m": "6 meses", "12-1": "12 meses sin el último"}
 REGIMES = {"d": "filtro diario SPY > media 200", "m": "filtro mensual SPY > media 200", "no": "sin filtro"}
-DEFAULT = "n10_mix_d"
+DEFAULT = "n10_mix_no"
 
 
 def load(name, default):
@@ -190,8 +190,7 @@ def main():
                  "r6": round(C[t][i] / C[t][i - 126] - 1, 4), "r12": round(C[t][i] / C[t][i - 252] - 1, 4)}
                 for k, (v, t) in enumerate(rk[:25])],
         # si el mes cambiara hoy: quiénes entrarían y quiénes saldrían
-        "preview": {"buy": [t for t in top10 if t not in holding] if regime_ok[i] else [],
-                    "sell": [t for t in holding if t not in top10] if regime_ok[i] else holding},
+        "preview": {"buy": [t for t in top10 if t not in holding], "sell": [t for t in holding if t not in top10]},
         "next": "primer día hábil del próximo mes",
     }
     out = {"generated": datetime.now(ZoneInfo("America/Santiago")).strftime("%Y-%m-%d %H:%M"), "default": DEFAULT,

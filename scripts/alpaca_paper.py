@@ -1,10 +1,10 @@
-"""Replica la estrategia de momentum (top 10, filtro SPY sobre su media de 200 días) en una cuenta
+"""Replica la estrategia de momentum (top 10, siempre invertida) en una cuenta
 de simulación (paper) de Alpaca.
 
 Cada día hábil, después de que scripts/momentum.py calcula el estado al cierre:
 - toma las acciones que la regla tiene en cartera hoy (data/momentum.json → state.holding);
 - vende las que la cuenta tiene y la regla no, y compra las que faltan;
-- el día de un rebalanceo de la regla (mensual o por el filtro de mercado), lleva todo a partes iguales.
+- el día de un rebalanceo de la regla (el primer día hábil de cada mes), lleva todo a partes iguales.
 Las órdenes son a mercado y, como se envían con el mercado cerrado, se ejecutan en la próxima apertura,
 igual que supone el backtest.
 
@@ -172,8 +172,7 @@ def main():
         print(f"Pausado desde el {ctl.get('since', '?')} ({ctl.get('action', '')}): no se envían órdenes hasta reanudar.")
         orders = []
 
-    print(f"Regla al {st['date']}: filtro de mercado {'activo (en acciones)' if st['regime']['ok'] else 'en efectivo'}; "
-          f"cartera {', '.join(target) or 'ninguna'}{' · día de rebalanceo' if rebalance else ''}")
+    print(f"Regla al {st['date']}: cartera {', '.join(target) or 'ninguna'}{' · día de rebalanceo' if rebalance else ''}")
     print(f"Cuenta paper: valor {equity:,.2f} · efectivo {cash:,.2f} · {len(positions)} posiciones")
     for s, side, v in orders:
         print(f"  {'VENDE TODO' if side == 'close' else side.upper():10} {s:6} {v:12,.2f}")
