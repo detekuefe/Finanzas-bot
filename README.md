@@ -8,17 +8,16 @@ Plataforma para seguir los activos de la planilla `Ensayo.xlsx`:
 
 | Pieza | Qué hace |
 |---|---|
-| `index.html` | La app. GitHub Pages la publica tal cual. Incluye el Laboratorio (`#lab`), que calcula indicadores y backtests en el navegador con los mismos datos. |
+| `index.html` | La app. GitHub Pages la publica tal cual. Incluye la página de análisis técnico (`#analisis`): velas diarias y semanales de cada activo e índice con SMA, EMA e Ichimoku configurables y líneas de tendencia dibujadas a mano, que se guardan en el navegador. |
 | `scripts/fetch_data.py` | Descarga precios de Yahoo Finance (`yfinance`) y los guarda en `data/`. |
 | `.github/workflows/update-data.yml` | Ejecuta el script cada 15 minutos de lunes a viernes, en horario de mercado, y guarda los cambios. |
 | `data/<TICKER>.json` | Velas diarias (2 años, se acumulan) y semanales (10 años). |
 | `data/intra/<TICKER>.json` | Velas de 5 minutos por sesión, con premarket. Yahoo entrega 60 días; el repositorio los va acumulando. |
 | `data/summary.json` | Último precio y cierres recientes de cada activo, más VIX, tasa a 10 años, Brent y dólar en pesos. Incluye las acciones de la cartera del bot (`bot`: posiciones de Alpaca paper y cartera de la regla), que el Resumen muestra primero, junto a índices y dólar como referencia. |
 | `data/USDCLP.json` | Dólar en pesos chilenos, diario (2 años) y semanal (10 años), para medir rentabilidades en pesos. |
-| `scripts/strategies.py` | Calcula las estrategias Ichimoku y EMA 9/18 vs SMA 30, el backtest y el estado de cada activo. Al cierre abre un issue con las señales nuevas (GitHub te avisa por correo). |
+| `scripts/strategies.py` | Calcula las estrategias Ichimoku y EMA 9/18 vs SMA 30, el backtest y el estado de cada activo. Se muestran en las pestañas Ichimoku y Medias de cada activo; ya no generan alertas. |
 | `data/signals.json`, `data/strat/` | Estado, backtest y series de cada estrategia. |
-| `scripts/ranking.js` → `data/ranking.json` | Prueba unas 100 combinaciones del Laboratorio en todos los activos (diario, 6 a 24 meses) y arma el ranking de la página `#ranking`. Corre una vez al día. |
-| `scripts/portfolio.py` → `data/portfolio.json` | Carteras con revisión mensual (rotación por momentum, momentum dual, Faber, filtro de régimen) a 10 años, con todos los activos y solo con índices, más Connors RSI(2) diario en los índices. Página `#carteras`. Corre una vez al día. |
+| `scripts/portfolio.py` → `data/portfolio.json` | Carteras con revisión mensual (rotación por momentum, momentum dual, Faber, filtro de régimen) a 10 años, con todos los activos y solo con índices, más Connors RSI(2) diario en los índices. La página `#carteras` muestra las 10 de mejor rendimiento frente a comprar y mantener los índices. Corre una vez al día. |
 | `scripts/alpaca_paper.py` → `data/alpaca_paper.json` | Replica la estrategia de momentum (top 10, filtro SPY sobre la media de 200) en una cuenta de **simulación** de Alpaca. Corre al cierre y envía órdenes a mercado para la próxima apertura; en las corridas de cada 15 minutos solo actualiza valor, posiciones y órdenes (`--status`), sin operar. Apunta fijo al servidor paper: no puede operar dinero real. La página `#paper` (Simulación) muestra el valor de la cuenta frente al Nasdaq-100 (QQQ, la referencia principal), a SPY y al backtest, las posiciones y las órdenes. |
 | `data/planilla.json` | Datos de la planilla original (precios anotados a mano de mayo a octubre de 2026). |
 
