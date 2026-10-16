@@ -189,7 +189,7 @@ function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
-const MENU=[['resumen','Resumen'],['analisis','Análisis técnico'],['carteras','Carteras'],['momentum','Momentum'],['paper','Simulación'],['buzon','Buzón']];
+const MENU=[['resumen','Resumen'],['analisis','Análisis técnico'],['momentum','Momentum'],['paper','Simulación'],['buzon','Buzón']];
 function renderNav(cur){nav.innerHTML=MENU.map(([k,l])=>`<a href="#${k}" ${cur===k?'aria-current="page"':''}>${l}${k==='buzon'&&unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`).concat('<span class="brk"></span>',ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
 let charts=[],obs=[];
 function clearCharts(){obs.forEach(o=>o.disconnect());obs=[];charts.forEach(c=>{try{c.remove()}catch(e){}});charts=[]}
@@ -520,80 +520,6 @@ async function renderTA(view) {
   setHint(); draw(); rerender = draw;
 }
 
-// ---------- Carteras: estrategias que buscan ganarle a comprar y mantener (data/portfolio.json, scripts/portfolio.py) ----------
-let PORT = null, ptTab = 'cart', ptWin = '10a', ptUni = 'ix', ptSel = null, ptCw = '12m';
-const PT_WINS = [['10a', '10 años'], ['5a', '5 años'], ['3a', '3 años'], ['2a', '2 años'], ['1a', '1 año'], ['2020', 'Año 2020'], ['2022', 'Año 2022']];
-const PT_NAMES = { SP500: 'S&P 500', NASDAQ: 'Nasdaq', ACWI: 'ACWI', QQQ: 'QQQ' };
-const PT_IDX = [['QQQ', '#2a9bb0'], ['NASDAQ', '#9b3fb5'], ['SP500', '#d0661b'], ['ACWI', '#888']];
-async function renderCarteras(view) {
-  if (!PORT) { view.innerHTML = '<p class="empty">Cargando carteras…</p>'; try { PORT = await getJSON('data/portfolio.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay carteras calculadas.</p>'; return } if (curRoute !== 'carteras') return }
-  const tabs = `<span class="seg" id="ptt"><button data-v="cart" aria-pressed="${ptTab === 'cart'}">Carteras mensuales (10 años)</button><button data-v="con" aria-pressed="${ptTab === 'con'}">Connors RSI(2) diario</button></span>`;
-  if (ptTab === 'con') return renderConnors(view, tabs);
-  const W = PORT.weekly.windows[ptWin], cur = /^\d+a$/.test(ptWin);
-  // Las 10 estrategias de mayor retorno del universo elegido (sin la cartera de igual peso, que es una referencia)
-  const top = W.rows.filter(r => (ptUni === 'ix' ? r.k.startsWith('ix_') : !r.k.startsWith('ix_')) && !/(^|_)ew$/.test(r.k)).sort((a, b) => b.ret - a.ret).slice(0, 10);
-  const idx = PT_IDX.filter(([t]) => W.bhIdx[t]).map(([t, c]) => ({ k: '_' + t, t, c, name: 'Comprar y mantener ' + (PT_NAMES[t] || t), group: 'Índice', ...W.bhIdx[t], now: [t] }));
-  const sp = W.bhIdx.SP500, qq = W.bhIdx.QQQ, best = [...idx].sort((a, b) => b.ret - a.ret)[0];
-  if (!top.some(r => r.k === ptSel)) ptSel = top[0].k;
-  const sel = top.find(r => r.k === ptSel);
-  const nBest = top.filter(r => r.ret > best.ret).length, nSafe = top.filter(r => r.ret > best.ret && r.dd >= best.dd).length;
-  const name = t => PT_NAMES[t] || t;
-  const vs = (r, b) => b ? pct((1 + r.ret) / (1 + b.ret) - 1) : '–', vc = (r, b) => b ? cls((1 + r.ret) / (1 + b.ret) - 1) : 'muted';
-  view.innerHTML = `<section class="panel"><h2>Las 10 carteras de mejor rendimiento frente a los índices</h2>
-    <p class="sub">De todas las estrategias de cartera probadas (rotación por momentum, momentum dual, tendencia de Faber y filtro de régimen, con revisión a fin de mes), aquí van las 10 que más rindieron en el plazo elegido, junto a comprar y mantener QQQ, Nasdaq, S&P 500 y ACWI. Cierres mensuales de ${W.from} a ${W.to}, con un costo de 0,05% por cada compra o venta. Resultados en dólares.</p>
-    <div class="lab-top">${tabs}</div>
-    <div class="lab-top"><span class="seg" id="ptu"><button data-v="ix" aria-pressed="${ptUni === 'ix'}">Solo índices</button><button data-v="all" aria-pressed="${ptUni === 'all'}">Todos los activos</button></span>
-      <span class="seg" id="ptw" style="flex-wrap:wrap">${PT_WINS.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === ptWin}">${l}</button>`).join('')}</span></div>
-    <p class="note" style="margin-bottom:10px"><b>${nBest ? `${nBest} de las 10 rinden más que el mejor índice, ${esc(name(best.t))} (${pct(best.ret)}, caída máx. ${pct(best.dd)})${nSafe ? `, y ${nSafe} lo logran sin caer más que él` : ''}.` : `Ninguna rinde más que el mejor índice, ${esc(name(best.t))} (${pct(best.ret)}, caída máx. ${pct(best.dd)}).`}</b> La primera rindió ${pct(top[0].ret)} con caída de ${pct(top[0].dd)}.</p>
-    ${ptUni === 'all' ? `<p class="note" style="margin-bottom:10px;border-left:3px solid var(--down);padding-left:8px"><b>Sesgo de selección.</b> Estos activos se eligieron hoy, sabiendo cuáles subieron (AXTI, SNDK, MU…). Una rotación que compra "los que más subieron" en esta lista hereda ese sesgo y por eso muestra retornos de miles por ciento que no se podían conseguir en tiempo real. La vista "Solo índices" evita el problema.</p>` : ''}
-    <div><p class="sub" style="margin:0 0 4px">Crecimiento de $100: <b>${esc(sel.name)}</b> frente a comprar y mantener los índices. Toca una fila para cambiarla. Escala logarítmica.</p><div class="chart" id="pc"></div><div class="legend" id="pleg"></div></div>
-    <div class="tablebox" style="margin-top:12px"><table><thead><tr><th>#</th><th style="text-align:left">Cartera</th><th>Retorno</th><th>Anual</th><th>Caída máx.</th><th title="Retorno mensual promedio dividido por su volatilidad, anualizado">Sharpe</th><th title="Diferencia de capital final frente a comprar y mantener QQQ">vs QQQ</th><th title="Diferencia de capital final frente a comprar y mantener el S&P 500">vs S&P 500</th>${cur ? '<th style="text-align:left">Tendría este mes</th>' : ''}</tr></thead><tbody>
-    ${idx.concat(top).sort((a, b) => b.ret - a.ret).map(r => {
-      const ref = r.k[0] === '_', n = ref ? '' : top.indexOf(r) + 1;
-      return `<tr data-k="${r.k}" style="${r.k === ptSel ? 'background:var(--hover,rgba(127,127,127,.12))' : ''}${ref ? ';font-weight:600;cursor:default' : ''}"><td class="num muted">${n}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(r.name)}<span class="rb">${esc(r.group)}</span></td>
-      <td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.cagr)}">${pct(r.cagr)}</td><td class="num">${pct(r.dd)}</td><td class="num">${r.sharpe == null ? '–' : fmt(r.sharpe, 2)}</td>
-      <td class="num ${r.k === '_QQQ' ? 'muted' : vc(r, qq)}">${r.k === '_QQQ' ? '–' : vs(r, qq)}</td><td class="num ${r.k === '_SP500' ? 'muted' : vc(r, sp)}">${r.k === '_SP500' ? '–' : vs(r, sp)}</td>${cur ? `<td style="text-align:left;white-space:normal">${r.now && r.now.length ? r.now.map(name).map(esc).join(', ') : '<span class="muted">Efectivo</span>'}</td>` : ''}</tr>` }).join('')}
-    </tbody></table></div>
-    <p class="note"><b>Qué hace cada una.</b> <b>Rotación</b>: a fin de mes compra en partes iguales los N activos con mejor retorno de los últimos meses y vende el resto. "+ solo si 12 meses > 0" deja en efectivo los elegidos que vienen cayendo en el año (momentum absoluto). "+ S&P 500 sobre su media de 10 meses" pasa todo a efectivo cuando el mercado está en tendencia bajista (filtro de régimen). <b>Momentum dual</b> (Antonacci): todo en el mejor de S&P 500, Nasdaq y ACWI a 12 meses, o efectivo si ese retorno es negativo. <b>Faber</b>: cada activo pesa lo mismo y solo se mantiene si cerró el mes sobre su media de 10 meses. La columna "Tendría este mes" es lo que la regla indica comprar con el último cierre mensual. El efectivo no rinde interés en el cálculo, lo que perjudica un poco a las estrategias que salen del mercado.</p>
-    <p class="note"><b>Cuidado con el sobreajuste.</b> Las 10 se eligen mirando el resultado, así que en parte tuvieron suerte. Pesa más la que aparece arriba en varios plazos. Resultados pasados no garantizan resultados futuros.</p></section>`;
-  const ch = mk(view.querySelector('#pc'), { rightPriceScale: { mode: 1 } }), T = W.months.map(m => m + '-28');
-  const ser = [[sel.name, sel.eq, css('--accent'), 2.5]].concat(idx.map(r => [PT_NAMES[r.t] || r.t, r.eq, r.c, 1.5]));
-  ser.forEach(([n, eq, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(eq.map((v, i) => ({ time: T[i], value: v * 100 }))) });
-  ch.timeScale().fitContent();
-  view.querySelector('#pleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
-  view.querySelector('#ptt').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptTab = b.dataset.v; clearCharts(); renderCarteras(view) };
-  view.querySelector('#ptu').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptUni = b.dataset.v; clearCharts(); renderCarteras(view) };
-  view.querySelector('#ptw').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptWin = b.dataset.v; clearCharts(); renderCarteras(view) };
-  view.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr'); if (!tr || tr.dataset.k[0] === '_') return; ptSel = tr.dataset.k; const y = window.scrollY; clearCharts(); renderCarteras(view); window.scrollTo(0, y) };
-  rerender = () => { };
-}
-function renderConnors(view, tabs) {
-  const C = PORT.connors, ts = Object.keys(C);
-  const wins = [['all', 'Todo el período'], ['12m', '12 meses'], ['6m', '6 meses']];
-  view.innerHTML = `<section class="panel"><h2>Reversión a la media de Connors con RSI(2)</h2>
-    <p class="sub">Velas diarias de los índices. Compra al cierre cuando el RSI de 2 días baja de 10 (o de 5) y el precio está sobre su media de 200 días; vende al cierre cuando el precio supera su media de 5 días. Como la media de 200 días necesita historia, el período completo empieza en ${fdate(C[ts[0]].all.from)}. Costo de 0,05% por operación, en dólares.</p>
-    <div class="lab-top">${tabs}<span class="seg" id="pcw">${wins.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === ptCw}">${l}</button>`).join('')}</span></div>
-    <div class="tablebox"><table><thead><tr><th style="text-align:left">Índice</th><th>Comprar y mantener</th><th>Caída</th><th>RSI(2) &lt; 10</th><th>Caída</th><th>Operaciones</th><th>Invertido</th><th>RSI(2) &lt; 5</th><th>Caída</th><th>Operaciones</th></tr></thead><tbody>
-    ${ts.map(t => { const x = C[t][ptCw]; if (!x) return ''; const a = x.rsi10, b = x.rsi5;
-      return `<tr style="cursor:default"><td style="text-align:left">${esc(PT_NAMES[t] || t)}</td><td class="num ${cls(x.bh.ret)}">${pct(x.bh.ret)}</td><td class="num">${pct(x.bh.dd)}</td>
-      <td class="num ${cls(a.ret)}">${pct(a.ret)}</td><td class="num">${pct(a.dd)}</td><td class="num">${a.trades}</td><td class="num">${fmt(a.expo * 100, 0)}%</td>
-      <td class="num ${cls(b.ret)}">${pct(b.ret)}</td><td class="num">${pct(b.dd)}</td><td class="num">${b.trades}</td></tr>` }).join('')}
-    </tbody></table></div>
-    <div class="chart" id="cc" style="margin-top:12px"></div><div class="legend" id="cleg"></div>
-    <p class="note"><b>Cómo leerlo.</b> La estrategia solo está invertida un 10–15% del tiempo, así que gana menos que comprar y mantener en un mercado que sube fuerte, pero con caídas mucho menores. Su atractivo es el retorno por día invertido: el resto del tiempo el dinero queda libre. El filtro de VIX bajo 25 no se aplica porque la app guarda menos de un año de historia del VIX. Resultados pasados no garantizan resultados futuros.</p></section>`;
-  const ch = mk(view.querySelector('#cc')), cols = ['#d0661b', '#2a9bb0', '#9b3fb5', '#0f8a5f'];
-  const leg = [];
-  ts.forEach((t, j) => { const x = C[t][ptCw]; if (!x) return; const D = x.dates;
-    const s1 = ch.addLineSeries({ color: cols[j], lineWidth: 2, priceLineVisible: false, lastValueVisible: false }); s1.setData(x.rsi10.eq.map((v, i) => ({ time: D[i], value: v * 100 })));
-    const s2 = ch.addLineSeries({ color: cols[j], lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false }); s2.setData(x.bh.eq.map((v, i) => ({ time: D[i], value: v * 100 })));
-    leg.push(`<span><i style="background:${cols[j]}"></i>${esc(PT_NAMES[t] || t)}: RSI(2) &lt; 10 (línea) y comprar y mantener (punteada)</span>`) });
-  ch.timeScale().fitContent();
-  view.querySelector('#cleg').innerHTML = leg.join('');
-  view.querySelector('#ptt').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptTab = b.dataset.v; clearCharts(); renderCarteras(view) };
-  view.querySelector('#pcw').onclick = e => { const b = e.target.closest('button'); if (!b) return; ptCw = b.dataset.v; clearCharts(); renderCarteras(view) };
-  rerender = () => { };
-}
-
 // ---------- Estrategia momentum (data/momentum.json, scripts/momentum.py) y buzón de alertas (data/alerts_log.json) ----------
 let MOM = null, mmWin = '1a', mmSel = null, LOG = [];
 const MM_REG = { d: 'Filtro diario', m: 'Filtro mensual', no: 'Sin filtro' };
@@ -894,7 +820,7 @@ async function loadLog() {
 let rerender=()=>{},curRoute=null;
 function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||MENU.some(m=>m[0]===h)?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
   document.getElementById('asof').textContent='al '+fdate(ORDER.map(x=>M[x].lastDate).sort().pop());
-  if(t==='resumen')renderSummary(v);else if(t==='analisis')renderTA(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='paper')renderPaper(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
+  if(t==='resumen')renderSummary(v);else if(t==='analisis')renderTA(v);else if(t==='momentum')renderMomentum(v);else if(t==='paper')renderPaper(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}
@@ -906,7 +832,7 @@ function setOrder(){const has=t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tick
 async function load(){
   try{SUM=await getJSON('data/summary.json')}catch(e){setStatus('bad','Aún no hay datos. En GitHub, abre la pestaña Actions y ejecuta "Actualizar datos".');document.getElementById('view').innerHTML='<p class="empty">Sin datos todavía.</p>';return false}
   setOrder();computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);await loadLog();return true}
-async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];SUM=s;setOrder();for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
+async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;for(const k in cacheS)delete cacheS[k];SUM=s;setOrder();for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
 if(!window.LightweightCharts){document.getElementById('view').innerHTML='<p class="empty">No se pudo cargar la librería de gráficos. Recarga la página.</p>';return}
 getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,120000)});
 })();
