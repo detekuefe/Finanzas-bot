@@ -655,6 +655,55 @@ const clp = x => x == null || !isFinite(x) ? '–' : '$' + fmtInt(x);
 const CTL_URL = 'https://github.com/detekuefe/Finanzas-bot/actions/workflows/alpaca-control.yml';
 // Valor de la cartera durante la sesión de hoy: cantidades actuales de cada posición por su precio de 5 minutos
 // (velas de Yahoo, solo horario regular), más el efectivo, contra el valor al cierre anterior. QQQ contra su cierre previo.
+let pgMode = 'i'; try { if (localStorage.getItem('pgMode') === 'd') pgMode = 'd' } catch (e) { }
+// Crecimiento de $100 con velas de 5 minutos desde el cierre del primer día: la cuenta se reconstruye con el efectivo
+// inicial y las compras y ventas ejecutadas (cantidad y precio de Alpaca, aplicadas en la apertura del día en que se
+// llenaron), valorizadas con el precio de cada 5 minutos. QQQ y S&P 500 contra su cierre de ese primer día.
+async function paperGrowthIntra(view, H, O, h0) {
+  const el = view.querySelector('#pac'), leg = view.querySelector('#paleg');
+  const F = O.filter(o => (o.status === 'filled' || o.status === 'partially_filled') && o.qty && o.price && (o.filled || o.d) > h0.d).map(o => ({ t: o.t.replace('.', '-'), d: (o.filled || o.d).slice(0, 10), q: (o.side === 'buy' ? 1 : -1) * o.qty, px: o.price }));
+  const syms = [...new Set(F.map(f => f.t))], refs = ['QQQ', 'SP500'];
+  el.innerHTML = '<p class="muted" style="margin:0;padding:20px 0">Cargando precios de 5 minutos…</p>';
+  await Promise.all(syms.concat(refs).map(t => cacheI[t] ? null : getJSON('data/intra/' + t + '.json').then(d => { cacheI[t] = d }).catch(() => { cacheI[t] = { days: {} } })));
+  if (!view.contains(el) || pgMode !== 'i') return;
+  const reg = bs => (bs || []).filter(b => { const m = nyMin(b[0]); return m >= 570 && m < 960 });
+  const qd = cacheI.QQQ.days || {}, days = Object.keys(qd).filter(d => d > h0.d).sort();
+  const close0 = t => { const c = SUM && SUM.tickers[t] ? SUM.tickers[t].closes.find(x => x[0] === h0.d) : null; return c ? c[1] : null };
+  const b0 = { QQQ: close0('QQQ'), SP500: close0('SP500') }, q0 = reg(qd[h0.d]);
+  const t0 = q0.length ? q0[q0.length - 1][0] + 300 : Date.parse(h0.d + 'T20:00:00Z') / 1000;
+  if (!days.length || !b0.QQQ) { el.innerHTML = '<p class="muted" style="margin:0;padding:20px 0">Todavía no hay velas de 5 minutos para este período.</p>'; return }
+  let cash = h0.equity; const hold = {}, last = {}, A = [[t0, 100]], Rf = { QQQ: [[t0, 100]], SP500: b0.SP500 ? [[t0, 100]] : [] }, marks = [];
+  for (const d of days) {
+    const bars = {}; syms.concat(refs).forEach(t => { bars[t] = reg(cacheI[t] && cacheI[t].days && cacheI[t].days[d]) });
+    const times = [...new Set(Object.values(bars).flat().map(b => b[0]))].sort((a, b) => a - b); if (!times.length) continue;
+    const fills = F.filter(f => f.d === d);
+    if (fills.length) { fills.forEach(f => { hold[f.t] = (hold[f.t] || 0) + f.q; cash -= f.q * f.px; if (last[f.t] == null) last[f.t] = f.px });
+      const nb = fills.filter(f => f.q > 0).length, ns = fills.length - nb;
+      if (ns) marks.push({ time: times[0], position: 'aboveBar', color: css('--down'), shape: 'arrowDown', text: 'Vende ' + ns });
+      if (nb) marks.push({ time: times[0], position: 'belowBar', color: css('--up'), shape: 'arrowUp', text: 'Compra ' + (nb > 4 ? nb + ' acciones' : fills.filter(f => f.q > 0).map(f => f.t).join(', ')) }) }
+    const ix = {}; Object.keys(bars).forEach(t => ix[t] = -1);
+    for (const tm of times) {
+      for (const t in bars) { const bs = bars[t]; while (ix[t] + 1 < bs.length && bs[ix[t] + 1][0] <= tm) ix[t]++; if (ix[t] >= 0) last[t] = bs[ix[t]][4] }
+      let v = cash, ok = true; for (const t in hold) { if (Math.abs(hold[t]) < 1e-9) continue; if (last[t] == null) { ok = false; break } v += hold[t] * last[t] }
+      if (ok) A.push([tm, v / h0.equity * 100]);
+      refs.forEach(t => { if (b0[t] && last[t] != null && ix[t] >= 0) Rf[t].push([tm, last[t] / b0[t] * 100]) });
+    }
+  }
+  el.innerHTML = '';
+  const sh = e => e + tzOffset(e, 'America/Santiago');
+  const ch = mk(el, { timeScale: { borderColor: css('--line'), timeVisible: true, secondsVisible: false } }); ch._pg = 1;
+  const add = (data, c, w, lv) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: lv }); s.setData(data.map(([t, v]) => ({ time: sh(t), value: v }))); return s };
+  const ser = [['Cuenta Alpaca', A, css('--accent'), 2.5], ['Nasdaq-100 (QQQ)', Rf.QQQ, '#2a9bb0', 2], ['S&P 500', Rf.SP500, '#d0661b', 1]].filter(x => x[1].length > 1);
+  const lines = ser.map(([, d, c, w], i) => add(d, c, w, i === 0));
+  // La regla del backtest solo tiene un valor por cierre: se dibuja en la hora de cierre de cada día
+  const closeT = d => { const q = reg(qd[d]); return q.length ? q[q.length - 1][0] + 300 : null };
+  const Mo = H.filter(x => x.model && h0.model).map(x => [x.d === h0.d ? t0 : closeT(x.d), x.model / h0.model * 100]).filter(x => x[0]);
+  if (Mo.length > 1) { add(Mo, '#888', 1.5, false); ser.push(['Regla en el backtest (al cierre)', Mo, '#888']) }
+  lines[0].createPriceLine({ price: 100, color: css('--muted'), lineWidth: 1, lineStyle: 2, axisLabelVisible: false });
+  if (marks.length) lines[0].setMarkers(marks.map(m => ({ ...m, time: sh(m.time) })));
+  ch.timeScale().fitContent();
+  leg.innerHTML = ser.map(([n, d, c]) => `<span><i style="background:${c}"></i>${esc(n)} ${pct(d[d.length - 1][1] / 100 - 1)}</span>`).join('') + '<span class="muted">Hora de Chile, solo horario regular de Nueva York.</span>';
+}
 async function paperIntra(view, P) {
   const box = view.querySelector('#pibox'); if (!box) return;
   const syms = P.map(p => p.t.replace('.', '-'));
@@ -742,7 +791,7 @@ async function renderPaper(view) {
       <div class="stat"><b>Invertido · efectivo</b><span class="num">${fmt(invested, 0)} · ${fmt(PAP.cash, 0)}</span></div>
     </div>
     ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
-    <h3 style="margin:14px 0 6px">Crecimiento de $100</h3>
+    <div class="row" style="margin:14px 0 6px"><h3 style="margin:0">Crecimiento de $100</h3>${H.length > 1 ? `<span class="seg" id="pgm"><button data-v="i" aria-pressed="${pgMode === 'i'}">Cada 5 minutos</button><button data-v="d" aria-pressed="${pgMode === 'd'}">Un punto por día</button></span>` : ''}</div>
     ${H.length > 1 ? '<div class="chart" id="pac"></div><div class="legend" id="paleg"></div>' : `<p class="muted" style="margin:0">El gráfico se arma desde el segundo día de la simulación: cada cierre agrega un punto con el valor de la cuenta, el Nasdaq-100 (QQQ), SPY y la regla del backtest.</p>`}
     <p class="note" style="margin-top:6px">Las flechas marcan las compras y ventas ejecutadas. Si la cuenta se separa de la regla del backtest, la diferencia viene de la ejecución real: precio de apertura distinto al cierre, órdenes fraccionadas y redondeos.</p>
     <h3 style="margin:16px 0 6px">Hoy, cada 5 minutos: cartera vs Nasdaq-100 (QQQ)</h3>
@@ -758,8 +807,9 @@ async function renderPaper(view) {
     ${ordTable(O.filter(o => !ORD_OPEN.includes(o.status)), 'Sin movimientos todavía.')}</details></section>
   ${taxSection()}`;
   bindTax(view);
-  if (H.length > 1) {
-    const ch = mk(view.querySelector('#pac'));
+  const growth = () => { const el = view.querySelector('#pac'); if (!el) return; charts = charts.filter(c => { if (c._pg) { try { c.remove() } catch (e) { } return false } return true }); el.innerHTML = '';
+    if (pgMode === 'i') return paperGrowthIntra(view, H, O, h0);
+    const ch = mk(el); ch._pg = 1;
     const ser = [['Cuenta Alpaca', 'equity', css('--accent'), 2.5], ['Nasdaq-100 (QQQ)', 'qqq', '#2a9bb0', 2], ['SPY', 'spy', '#d0661b', 1], ['Regla en el backtest', 'model', '#888', 1.5]].filter(([, k]) => h0[k]);
     const lines = ser.map(([n, k, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(H.filter(x => x[k]).map(x => ({ time: x.d, value: x[k] / h0[k] * 100 }))); return s });
     // Hitos: compras y ventas ejecutadas, agrupadas por día (se marcan en el primer cierre registrado desde ese día)
@@ -773,6 +823,10 @@ async function renderPaper(view) {
     if (marks.length) lines[0].setMarkers(marks.sort((a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0));
     ch.timeScale().fitContent();
     view.querySelector('#paleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
+  };
+  if (H.length > 1) {
+    growth();
+    view.querySelector('#pgm').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.v === pgMode) return; pgMode = b.dataset.v; try { localStorage.setItem('pgMode', pgMode) } catch (_) { } view.querySelectorAll('#pgm button').forEach(x => x.setAttribute('aria-pressed', x === b)); growth() };
   }
   paperIntra(view, P);
   rerender = () => { };
