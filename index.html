@@ -189,7 +189,8 @@ function freshness(){const u=SUM&&SUM.updated;if(!u)return;const ago=(Date.now()
 
 // ---------- Navegación y gráficos ----------
 const nav=document.getElementById('nav');
-function renderNav(cur){nav.innerHTML=[`<a href="#resumen" ${cur==='resumen'?'aria-current="page"':''}>Resumen</a>`,`<a href="#senales" ${cur==='senales'?'aria-current="page"':''}>Señales${newAlerts().length?` <span class="sig sig-buy" style="padding:0 5px">${newAlerts().length}</span>`:''}</a>`,`<a href="#lab" ${cur==='lab'?'aria-current="page"':''}>Laboratorio</a>`,`<a href="#ranking" ${cur==='ranking'?'aria-current="page"':''}>Ranking</a>`,`<a href="#carteras" ${cur==='carteras'?'aria-current="page"':''}>Carteras</a>`,`<a href="#momentum" ${cur==='momentum'?'aria-current="page"':''}>Momentum</a>`,`<a href="#paper" ${cur==='paper'?'aria-current="page"':''}>Simulación</a>`,`<a href="#buzon" ${cur==='buzon'?'aria-current="page"':''}>Buzón${unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`,'<span class="brk"></span>'].concat(ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
+const MENU=[['resumen','Resumen'],['analisis','Análisis técnico'],['carteras','Carteras'],['momentum','Momentum'],['paper','Simulación'],['buzon','Buzón']];
+function renderNav(cur){nav.innerHTML=MENU.map(([k,l])=>`<a href="#${k}" ${cur===k?'aria-current="page"':''}>${l}${k==='buzon'&&unreadCount()?` <span class="sig sig-buy" style="padding:0 5px">${unreadCount()}</span>`:''}</a>`).concat('<span class="brk"></span>',ORDER.map(t=>`<a href="#${t}" ${cur===t?'aria-current="page"':''}><span class="dot ${M[t].d1>=0?'up':'down'}"></span>${t}</a>`)).join('')}
 let charts=[],obs=[];
 function clearCharts(){obs.forEach(o=>o.disconnect());obs=[];charts.forEach(c=>{try{c.remove()}catch(e){}});charts=[]}
 function baseOpts(el,extra={}){return Object.assign({width:el.clientWidth,height:el.clientHeight,layout:{background:{type:'solid',color:css('--panel')},textColor:css('--muted'),fontFamily:'IBM Plex Mono, monospace',fontSize:11},grid:{vertLines:{color:css('--grid')},horzLines:{color:css('--grid')}},rightPriceScale:{borderColor:css('--line'),minimumWidth:78},timeScale:{borderColor:css('--line')},crosshair:{mode:0},localization:{locale:'es-CL',priceFormatter:p=>fmt(p,2)}},extra)}
@@ -343,38 +344,8 @@ let SIG=null;const cacheS={};
 const WINS=[['6m','6 meses'],['12m','12 meses'],['18m','18 meses'],['24m','24 meses']];
 let btWin='24m';try{const w=localStorage.getItem('btWin');if(WINS.some(x=>x[0]===w))btWin=w}catch(e){}
 const btOf=x=>(x.bts||{})[btWin]||null;
-const STRAT={ichimoku:'Ichimoku',medias:'EMA 9/18 vs SMA 30'};
 const SIGTXT={buy_new:['COMPRA','sig-buy'],sell_new:['VENTA','sig-sell'],buy_recent:['Compra reciente','sig-long'],sell_recent:['Venta reciente','sig-flat'],long:['Comprado','sig-long'],flat:['Fuera','sig-flat']};
 const sigPill=s=>{const [l,c]=SIGTXT[s.code]||['–','sig-flat'];return`<span class="sig ${c}">${l}</span>`};
-const sigRank=c=>({buy_new:0,sell_new:1,buy_recent:2,sell_recent:3,long:4,flat:5}[c]??9);
-function newAlerts(){if(!SIG)return[];const out=[];for(const t of Object.keys(SIG.tickers))for(const k of ['ichimoku','medias']){const s=SIG.tickers[t][k].state;if(s.code==='buy_new'||s.code==='sell_new')out.push({t,k,s})}return out}
-function notifyNew(prev){try{if(!('Notification'in window)||Notification.permission!=='granted'||!prev)return;const seen=new Set(prev.map(a=>a.t+a.k+a.s.code));for(const a of newAlerts())if(!seen.has(a.t+a.k+a.s.code))new Notification(`${a.t}: ${a.s.code==='buy_new'?'señal de COMPRA':'señal de VENTA'}`,{body:`${STRAT[a.k]}. ${a.s.detail}`})}catch(e){}}
-
-function renderSignals(view){
-  if(!SIG){view.innerHTML='<p class="empty">Aún no hay señales calculadas. Se generan con la próxima actualización de datos.</p>';return}
-  const al=newAlerts();const tks=ORDER.filter(t=>SIG.tickers[t]);const missing=ORDER.filter(t=>!SIG.tickers[t]);
-  const rows=[...tks].sort((a,b)=>Math.min(sigRank(SIG.tickers[a].ichimoku.state.code),sigRank(SIG.tickers[a].medias.state.code))-Math.min(sigRank(SIG.tickers[b].ichimoku.state.code),sigRank(SIG.tickers[b].medias.state.code)));
-  const btCell=b=>!b?'<span class="muted">–</span><span class="rb">sin historia suficiente</span>':`<span class="num ${cls(b.totalRet)}">${pct(b.totalRet)}</span><span class="rb">B&amp;H ${pct(b.buyHold)} · ${b.trades} op. · acierto ${b.winRate==null?'–':fmt(b.winRate*100,0)+'%'}</span>`;
-  const canNotify='Notification'in window;
-  view.innerHTML=`
-  <section class="panel"><div class="row"><div><h2>Alertas de hoy</h2><p class="sub">Señales nuevas al cierre de la última vela diaria. Durante la sesión la vela de hoy está en curso, así que una señal puede aparecer o desaparecer hasta el cierre.</p></div>
-    ${canNotify?`<button class="btn" id="notif">${Notification.permission==='granted'?'Avisos del navegador activados':'Avisarme en este navegador'}</button>`:''}</div>
-    ${al.length?`<div class="alerts">${al.map(a=>`<a class="alert ${a.s.code==='buy_new'?'a-buy':'a-sell'}" href="#${a.t}"><span><b>${a.t}</b> ${STRAT[a.k]}: <b>${a.s.code==='buy_new'?'COMPRA':'VENTA'}</b></span><span class="rb">${esc(a.s.detail)}</span></a>`).join('')}</div>`:'<p class="muted" style="margin:0">No hay señales nuevas de compra ni de venta.</p>'}
-  </section>
-  <section class="panel"><div class="row"><h2>Estado de cada análisis</h2><div class="seg" id="bwin">${WINS.map(([k,l])=>`<button data-w="${k}" aria-pressed="${k===btWin}">${l}</button>`).join('')}</div></div><p class="sub">Backtest de los últimos ${WINS.find(x=>x[0]===btWin)[1]}${(()=>{const q=SIG.tickers[tks[0]];const b=q&&btOf(q.ichimoku);return b?` (${fdate(b.from)} a ${fdate(q.to)})`:''})()}: retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H). Clic en una fila para ver el detalle.</p>
-  <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Ichimoku</th><th class="btcol">Backtest Ichimoku</th><th style="text-align:left">EMA 9/18 vs SMA 30</th><th class="btcol">Backtest medias</th></tr></thead><tbody>
-  ${rows.map(t=>{const v=SIG.tickers[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t]||'')}</span></td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.ichimoku.state)}<span class="rb">${esc(v.ichimoku.state.detail)}</span><div class="btin">${btCell(btOf(v.ichimoku))}</div></td><td class="btcol">${btCell(btOf(v.ichimoku))}</td>
-    <td style="text-align:left;white-space:normal;min-width:200px">${sigPill(v.medias.state)}<span class="rb">${esc(v.medias.state.detail)}</span><div class="btin">${btCell(btOf(v.medias))}</div></td><td class="btcol">${btCell(btOf(v.medias))}</td></tr>`}).join('')}
-  </tbody></table></div>
-  ${missing.length?`<p class="note">Sin historia suficiente para las estrategias: ${missing.join(', ')}.</p>`:''}
-  <p class="note"><b>Ichimoku:</b> ${esc(SIG.rules.ichimoku)}<br><b>Medias:</b> ${esc(SIG.rules.medias)}<br><b>Backtest:</b> ${esc(SIG.rules.backtest)}</p></section>`;
-  view.querySelector('tbody').onclick=e=>{const tr=e.target.closest('tr');if(tr){tab=sigFirst(tr.dataset.t);location.hash=tr.dataset.t}};
-  view.querySelector('#bwin').onclick=e=>{const b=e.target.closest('button');if(!b)return;btWin=b.dataset.w;try{localStorage.setItem('btWin',btWin)}catch(_){}renderSignals(view)};
-  const nb=view.querySelector('#notif');if(nb)nb.onclick=async()=>{try{const r=await Notification.requestPermission();nb.textContent=r==='granted'?'Avisos del navegador activados':'El navegador no permitió avisos'}catch(e){nb.textContent='El navegador no permitió avisos'}};
-  rerender=()=>{};
-}
-function sigFirst(t){const v=SIG&&SIG.tickers[t];if(!v)return tab;return sigRank(v.medias.state.code)<sigRank(v.ichimoku.state.code)?'med':'ichi'}
 
 async function drawStrat(t,which,daily,pane,ctl,kf=()=>1){
   const key=which==='ichi'?'ichimoku':'medias';ctl.innerHTML='';
@@ -421,496 +392,157 @@ async function drawStrat(t,which,daily,pane,ctl,kf=()=>1){
   ec.timeScale().fitContent();
 }
 
-// ---------- Ruteo y refresco ----------
-// ---------- Laboratorio: reglas propias y backtesting ----------
-// Usa sma, ema, rsi, macd y los formatos definidos en index.html.
-
-const LAB_MA = (t, v, n) => t === 'SMA' ? sma(v, n) : ema(v, n);
-const labMid = (h, l, n) => h.map((_, i) => i < n - 1 ? null : (Math.max(...h.slice(i - n + 1, i + 1)) + Math.min(...l.slice(i - n + 1, i + 1))) / 2);
-const labShift = (v, k) => v.map((_, i) => i - k >= 0 ? v[i - k] : null);
-const labCmp = (a, b, f) => a.map((x, i) => { const y = typeof b === 'number' ? b : b[i]; return x == null || y == null ? null : f(x, y) });
-const labAnd = (...arrs) => arrs[0].map((_, i) => arrs.some(a => a[i] == null) ? null : arrs.every(a => a[i]));
-const labOr = (...arrs) => arrs[0].map((_, i) => arrs.some(a => a[i] == null) ? null : arrs.some(a => a[i]));
-const gt = (x, y) => x > y, lt = (x, y) => x < y;
-
-function labStd(v, n) { const m = sma(v, n); return m.map((mu, i) => mu == null ? null : Math.sqrt(v.slice(i - n + 1, i + 1).reduce((a, b) => a + (b - mu) ** 2, 0) / n)) }
-function labRsi(c, n) { return rsi(c, n) }
-function labMacd(c, f, s, g) {
-  const a = ema(c, f), b = ema(c, s); const m = c.map((_, i) => a[i] != null && b[i] != null ? a[i] - b[i] : null);
-  const st = m.findIndex(x => x != null); const sg = st < 0 ? m.map(() => null) : m.map(() => null);
-  if (st >= 0) { const e = ema(m.slice(st), g); e.forEach((x, j) => sg[st + j] = x) }
-  return { m, sg };
-}
-
-// Media de Wilder (la que usan RSI, ATR y ADX): parte con el promedio simple de los primeros n valores
-function labRma(v, n) { const out = v.map(() => null); let st = v.findIndex(x => x != null); if (st < 0 || st + n > v.length) return out; let a = v.slice(st, st + n).reduce((x, y) => x + y, 0) / n; out[st + n - 1] = a; for (let i = st + n; i < v.length; i++) { a = (a * (n - 1) + v[i]) / n; out[i] = a } return out }
-const labTr = S => S.c.map((_, i) => i === 0 ? null : Math.max(S.h[i] - S.l[i], Math.abs(S.h[i] - S.c[i - 1]), Math.abs(S.l[i] - S.c[i - 1])));
-const labAtr = (S, n) => labRma(labTr(S), n);
-function labAdx(S, n) {
-  const pdm = S.c.map((_, i) => { if (!i) return null; const u = S.h[i] - S.h[i - 1], d = S.l[i - 1] - S.l[i]; return u > d && u > 0 ? u : 0 }), mdm = S.c.map((_, i) => { if (!i) return null; const u = S.h[i] - S.h[i - 1], d = S.l[i - 1] - S.l[i]; return d > u && d > 0 ? d : 0 });
-  const tr = labRma(labTr(S), n), pp = labRma(pdm, n), mm = labRma(mdm, n);
-  const pdi = tr.map((t, i) => t ? 100 * pp[i] / t : null), mdi = tr.map((t, i) => t ? 100 * mm[i] / t : null);
-  const dx = pdi.map((x, i) => x == null || mdi[i] == null || x + mdi[i] === 0 ? (x == null ? null : 0) : 100 * Math.abs(x - mdi[i]) / (x + mdi[i]));
-  return { adx: labRma(dx, n), pdi, mdi };
-}
-function labChop(S, n) { const tr = labTr(S); return S.c.map((_, i) => { if (i < n) return null; let s = 0, hi = -Infinity, lo = Infinity; for (let j = i - n + 1; j <= i; j++) { s += tr[j]; hi = Math.max(hi, S.h[j]); lo = Math.min(lo, S.l[j]) } return hi > lo ? 100 * Math.log10(s / (hi - lo)) / Math.log10(n) : null }) }
-
-// Cada indicador: cómo se escribe (form), sus parámetros, las condiciones posibles (ops) y su cálculo.
-// form: textos y claves de parámetros en el orden en que se leen; 'op' es el selector de condición.
-const LAB_DEFS = {
-  ma2: { name: 'Media vs media', form: ['ta', 'a', 'op', 'tb', 'b'], p: { ta: 'EMA', a: 9, tb: 'SMA', b: 30 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a), B = LAB_MA(p.tb, S.c, p.b); return { up: labCmp(A, B, gt), dn: labCmp(A, B, lt), lines: [[`${p.ta} ${p.a}`, A], [`${p.tb} ${p.b}`, B]] } } },
-  ma3: { name: 'Dos medias vs una tercera', form: ['ta', 'a', 'y', 'tb', 'b', 'op', 'tc', 'c'], p: { ta: 'EMA', a: 9, tb: 'EMA', b: 18, tc: 'SMA', c: 30 },
-    ops: [['up', 'ambas sobre'], ['dn', 'ambas bajo']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a), B = LAB_MA(p.tb, S.c, p.b), C = LAB_MA(p.tc, S.c, p.c);
-      return { up: labAnd(labCmp(A, C, gt), labCmp(B, C, gt)), dn: labAnd(labCmp(A, C, lt), labCmp(B, C, lt)), lines: [[`${p.ta} ${p.a}`, A], [`${p.tb} ${p.b}`, B], [`${p.tc} ${p.c}`, C]] } } },
-  pma: { name: 'Precio vs media', form: ['Precio', 'op', 'ta', 'a'], p: { ta: 'SMA', a: 50 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a); return { up: labCmp(S.c, A, gt), dn: labCmp(S.c, A, lt), lines: [[`${p.ta} ${p.a}`, A]] } } },
-  rsi: { name: 'RSI', form: ['RSI', 'n', 'op', 'x'], p: { n: 14, x: 30 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const R = labRsi(S.c, p.n); return { up: labCmp(R, +p.x, gt), dn: labCmp(R, +p.x, lt) } } },
-  macd: { name: 'MACD', form: ['MACD', 'f', 's', 'g', 'op'], p: { f: 12, s: 26, g: 9 },
-    ops: [['sup', 'sobre su señal'], ['sdn', 'bajo su señal'], ['zup', 'sobre cero'], ['zdn', 'bajo cero']],
-    calc(S, p) { const { m, sg } = labMacd(S.c, p.f, p.s, p.g); return { sup: labCmp(m, sg, gt), sdn: labCmp(m, sg, lt), zup: labCmp(m, 0, gt), zdn: labCmp(m, 0, lt) } } },
-  cloud: { name: 'Ichimoku: nube', form: ['Ichimoku', 't', 'k', 's', '· precio', 'op', 'la nube'], p: { t: 9, k: 26, s: 52 },
-    ops: [['up', 'sobre'], ['dn', 'bajo'], ['in', 'dentro de']],
-    calc(S, p) { const T = labMid(S.h, S.l, p.t), K = labMid(S.h, S.l, p.k), B = labMid(S.h, S.l, p.s);
-      const A = T.map((x, i) => x == null || K[i] == null ? null : (x + K[i]) / 2); const sa = labShift(A, p.k), sb = labShift(B, p.k);
-      const top = sa.map((x, i) => x == null || sb[i] == null ? null : Math.max(x, sb[i])), bot = sa.map((x, i) => x == null || sb[i] == null ? null : Math.min(x, sb[i]));
-      return { up: labCmp(S.c, top, gt), dn: labCmp(S.c, bot, lt), in: labAnd(labCmp(S.c, top, (x, y) => x <= y), labCmp(S.c, bot, (x, y) => x >= y)), lines: [['Senkou A', sa], ['Senkou B', sb]] } } },
-  tk: { name: 'Ichimoku: Tenkan vs Kijun', form: ['Tenkan', 't', 'op', 'Kijun', 'k'], p: { t: 9, k: 26 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const T = labMid(S.h, S.l, p.t), K = labMid(S.h, S.l, p.k); return { up: labCmp(T, K, gt), dn: labCmp(T, K, lt), lines: [[`Tenkan ${p.t}`, T], [`Kijun ${p.k}`, K]] } } },
-  chikou: { name: 'Cierre vs hace N barras (Chikou)', form: ['Cierre', 'op', 'el de hace', 'n', 'barras'], p: { n: 26 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const P = labShift(S.c, p.n); return { up: labCmp(S.c, P, gt), dn: labCmp(S.c, P, lt) } } },
-  boll: { name: 'Bandas de Bollinger', form: ['Bollinger', 'n', 'k', '· precio', 'op'], p: { n: 20, k: 2 },
-    ops: [['lo', 'bajo la banda inferior'], ['hi', 'sobre la banda superior'], ['mup', 'sobre la media'], ['mdn', 'bajo la media']],
-    calc(S, p) { const M = sma(S.c, p.n), D = labStd(S.c, p.n); const U = M.map((m, i) => m == null ? null : m + p.k * D[i]), L = M.map((m, i) => m == null ? null : m - p.k * D[i]);
-      return { lo: labCmp(S.c, L, lt), hi: labCmp(S.c, U, gt), mup: labCmp(S.c, M, gt), mdn: labCmp(S.c, M, lt), lines: [['Banda sup.', U], [`Media ${p.n}`, M], ['Banda inf.', L]] } } },
-  donch: { name: 'Ruptura de máximo o mínimo', form: ['Cierre', 'op', 'de las', 'n', 'barras previas'], p: { n: 20 },
-    ops: [['hi', 'sobre el máximo'], ['lo', 'bajo el mínimo']],
-    calc(S, p) { const n = p.n; const H = S.h.map((_, i) => i < n ? null : Math.max(...S.h.slice(i - n, i))), L = S.l.map((_, i) => i < n ? null : Math.min(...S.l.slice(i - n, i)));
-      return { hi: labCmp(S.c, H, gt), lo: labCmp(S.c, L, lt), lines: [[`Máx. ${n}`, H], [`Mín. ${n}`, L]] } } },
-  roc: { name: 'Rentabilidad de N barras', form: ['Rentabilidad de', 'n', 'barras', 'op', 'x', '%'], p: { n: 10, x: 0 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const R = S.c.map((c, i) => i < p.n ? null : (c / S.c[i - p.n] - 1) * 100); return { up: labCmp(R, +p.x, gt), dn: labCmp(R, +p.x, lt) } } },
-  vol: { name: 'Volumen', form: ['Volumen', 'op', 'x', 'veces su promedio de', 'n'], p: { x: 1.5, n: 20 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const A = sma(S.v, p.n); const R = S.v.map((v, i) => A[i] ? v / A[i] : null); return { up: labCmp(R, +p.x, gt), dn: labCmp(R, +p.x, lt) } } },
-  adx: { name: 'ADX (fuerza de tendencia)', form: ['ADX', 'n', 'op', 'x'], p: { n: 14, x: 20 },
-    ops: [['up', 'sobre'], ['dn', 'bajo'], ['dip', '· +DI sobre −DI'], ['dim', '· −DI sobre +DI']],
-    calc(S, p) { const { adx, pdi, mdi } = labAdx(S, p.n); return { up: labCmp(adx, +p.x, gt), dn: labCmp(adx, +p.x, lt), dip: labCmp(pdi, mdi, gt), dim: labCmp(mdi, pdi, gt) } } },
-  slope: { name: 'Pendiente de una media', form: ['Pendiente de', 'ta', 'a', 'en', 'n', 'barras', 'op'], p: { ta: 'SMA', a: 50, n: 10 },
-    ops: [['up', 'sube'], ['dn', 'baja']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a), P = labShift(A, p.n); return { up: labCmp(A, P, gt), dn: labCmp(A, P, lt), lines: [[`${p.ta} ${p.a}`, A]] } } },
-  pmm: { name: 'Precio vs media con margen %', form: ['Precio', 'op', 'ta', 'a', 'por más de', 'x', '%'], p: { ta: 'SMA', a: 30, x: 1 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a); const U = A.map(v => v == null ? null : v * (1 + p.x / 100)), L = A.map(v => v == null ? null : v * (1 - p.x / 100)); return { up: labCmp(S.c, U, gt), dn: labCmp(S.c, L, lt), lines: [[`${p.ta} ${p.a}`, A]] } } },
-  pmatr: { name: 'Precio vs media con margen ATR', form: ['Precio', 'op', 'ta', 'a', 'por más de', 'x', 'ATR', 'n'], p: { ta: 'SMA', a: 30, x: 0.5, n: 14 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const A = LAB_MA(p.ta, S.c, p.a), T = labAtr(S, p.n); const U = A.map((v, i) => v == null || T[i] == null ? null : v + p.x * T[i]), L = A.map((v, i) => v == null || T[i] == null ? null : v - p.x * T[i]); return { up: labCmp(S.c, U, gt), dn: labCmp(S.c, L, lt), lines: [[`${p.ta} ${p.a}`, A]] } } },
-  bbw: { name: 'Ancho de Bollinger', form: ['Ancho de Bollinger', 'n', 'k', 'op', 'x', '% del precio'], p: { n: 20, k: 2, x: 10 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const M = sma(S.c, p.n), D = labStd(S.c, p.n); const W = M.map((m, i) => m == null ? null : 2 * p.k * D[i] / m * 100); return { up: labCmp(W, +p.x, gt), dn: labCmp(W, +p.x, lt) } } },
-  atr: { name: 'ATR (volatilidad)', form: ['ATR', 'n', 'op', 'x', '% del precio'], p: { n: 14, x: 2 },
-    ops: [['up', 'sobre'], ['dn', 'bajo']],
-    calc(S, p) { const T = labAtr(S, p.n); const R = T.map((v, i) => v == null ? null : v / S.c[i] * 100); return { up: labCmp(R, +p.x, gt), dn: labCmp(R, +p.x, lt) } } },
-  chop: { name: 'Choppiness Index (lateral)', form: ['Choppiness', 'n', 'op', 'x'], p: { n: 14, x: 61.8 },
-    ops: [['dn', 'bajo'], ['up', 'sobre']],
-    calc(S, p) { const C = labChop(S, p.n); return { up: labCmp(C, +p.x, gt), dn: labCmp(C, +p.x, lt) } } },
-};
-// Ficha de cada indicador: base (cómo se calcula), uso habitual y qué indica
-const LAB_INFO = {
-  ma2: ['Promedio de los últimos N cierres. La SMA (simple) pesa igual todos los días; la EMA (exponencial) da más peso a los recientes y reacciona antes.',
-    'Cruce de una media rápida sobre una lenta para comprar y bajo ella para vender. Combinaciones típicas: EMA 9/21, SMA 20/50, SMA 50/200 ("cruce dorado").',
-    'La dirección de la tendencia. Si la rápida está sobre la lenta, el precio reciente es mayor que el promedio más largo: tendencia alcista. En mercados laterales da muchas señales falsas.'],
-  ma3: ['Tres medias móviles: dos rápidas comparadas contra una más lenta.',
-    'Exigir que las dos rápidas estén sobre la lenta antes de comprar filtra cruces débiles. Es la regla EMA 9/18 vs SMA 30 de la página Señales.',
-    'Tendencia alcista confirmada por dos plazos. Cuando solo una cruzó, la señal es dudosa.'],
-  pma: ['Compara el cierre con una media móvil de N cierres.',
-    'Filtro de tendencia simple: operar solo cuando el precio está sobre la SMA 50, 100 o 200.',
-    'Si el precio está sobre su media, el mercado está en promedio subiendo en ese plazo.'],
-  rsi: ['Índice de fuerza relativa (Wilder): 100 − 100 / (1 + promedio de subidas / promedio de bajadas) en N barras. Va de 0 a 100.',
-    'Sobre 70 se considera sobrecompra y bajo 30 sobreventa. Se usa para comprar rebotes (RSI que vuelve a subir sobre 30) o como filtro de impulso (RSI sobre 50).',
-    'La velocidad y fuerza de los movimientos recientes. En tendencias fuertes puede quedarse mucho tiempo en sobrecompra.'],
-  macd: ['Diferencia entre una EMA rápida (12) y una lenta (26). La línea de señal es la EMA 9 de esa diferencia.',
-    'Comprar cuando el MACD cruza sobre su señal y vender cuando cruza bajo ella. Sobre cero indica tendencia alcista.',
-    'Cambios de impulso. Anticipa giros, pero en lateral cruza muchas veces.'],
-  cloud: ['Ichimoku: Senkou A = (Tenkan + Kijun) / 2 y Senkou B = punto medio del máximo y mínimo de 52 barras, ambos desplazados 26 barras hacia adelante. El espacio entre ellas es la nube.',
-    'Comprar con el precio sobre la nube y evitar o vender bajo ella. Dentro de la nube es zona de indecisión.',
-    'La tendencia de fondo y zonas de soporte y resistencia. Una nube gruesa es un soporte más fuerte.'],
-  tk: ['Tenkan = punto medio del máximo y mínimo de 9 barras. Kijun = lo mismo con 26 barras.',
-    'Tenkan cruzando sobre Kijun es señal de compra; bajo Kijun, de venta. Vale más si ocurre sobre la nube.',
-    'El impulso de corto plazo frente al de mediano plazo.'],
-  chikou: ['Compara el cierre de hoy con el de hace N barras (en Ichimoku, 26).',
-    'Confirmación: el Chikou sobre el precio de hace 26 barras respalda una compra.',
-    'Si el precio actual supera al de hace N barras, el movimiento de ese plazo es positivo.'],
-  boll: ['Media de 20 barras más y menos 2 desviaciones estándar de los cierres.',
-    'Comprar cerca de la banda inferior y vender en la media o en la banda superior (reversión a la media). También se usan rupturas de la banda superior como señal de fuerza.',
-    'Si el precio está caro o barato respecto de su rango reciente. Cerca del 95% de los cierres caen dentro de las bandas.'],
-  donch: ['Canal de Donchian: el máximo y el mínimo de las N barras anteriores.',
-    'Comprar cuando el cierre supera el máximo de 20 barras y vender cuando cae bajo el mínimo de 10 (sistema "tortugas").',
-    'Rupturas: el precio sale de su rango reciente, a menudo el inicio de una tendencia.'],
-  roc: ['Rentabilidad entre el cierre actual y el de hace N barras, en %.',
-    'Filtro de impulso: operar solo si el activo subió en el plazo elegido, o comparar activos.',
-    'La velocidad del movimiento. Positivo, sube; negativo, baja.'],
-  vol: ['Volumen de la barra dividido por su promedio de N barras.',
-    'Confirmar rupturas o cruces exigiendo volumen sobre 1,5 veces lo normal.',
-    'Participación. Un movimiento con volumen alto tiene más respaldo.'],
-  adx: ['Índice direccional promedio (Wilder). +DI y −DI miden cuánto del rango diario es subida o bajada; DX = |+DI − −DI| / (+DI + −DI) × 100, y el ADX es su promedio de 14 barras. Va de 0 a 100.',
-    'Filtro de tendencia más usado: operar solo con ADX sobre 20 o 25. +DI sobre −DI indica que domina la subida.',
-    'La fuerza de la tendencia, no su dirección. Bajo 20 el mercado está lateral; sobre 25 hay tendencia; sobre 40, muy fuerte.'],
-  slope: ['Compara el valor de una media hoy con su valor hace N barras.',
-    'Filtro: comprar solo si la SMA 50 o la SMA 200 está subiendo.',
-    'Si la tendencia de fondo es alcista. Una media plana indica lateral.'],
-  pmm: ['Exige que el cierre supere la media por un porcentaje mínimo.',
-    'Confirmación: evita los cruces por centavos que se revierten al día siguiente. Márgenes típicos de 0,5% a 2%.',
-    'Que el precio se separó de verdad de su media.'],
-  pmatr: ['Igual que el margen %, pero medido en ATR: la distancia mínima se adapta a la volatilidad de cada activo.',
-    'Confirmación habitual: medio ATR o un ATR sobre la media.',
-    'Que el movimiento es mayor que el ruido normal del activo.'],
-  bbw: ['(Banda superior − banda inferior) / media × 100.',
-    'Detectar compresión: un ancho muy bajo suele anteceder un movimiento fuerte. Como filtro, evitar operar cruces cuando el ancho es mínimo.',
-    'La volatilidad relativa. Bajo = mercado comprimido; alto = movimiento en curso.'],
-  atr: ['Rango verdadero promedio (Wilder): el promedio de 14 barras del mayor entre máximo − mínimo y la distancia al cierre anterior. Aquí se expresa como % del precio.',
-    'Dimensionar stops (por ejemplo, 2 ATR bajo la compra) y filtrar: no operar con volatilidad demasiado baja o demasiado alta.',
-    'Cuánto se mueve el activo en una barra típica.'],
-  chop: ['Choppiness Index: 100 × log10(suma del rango verdadero de N barras / (máximo − mínimo de N barras)) / log10(N). Va de 0 a 100.',
-    'Sobre 61,8 se considera lateral y conviene no entrar; bajo 38,2 hay tendencia definida.',
-    'Si el precio avanza en una dirección o va de un lado a otro sin avanzar.'],
-};
-const LAB_MODES_INFO = 'Cada condición puede contar mientras se cumpla, solo el día en que empieza a cumplirse (el cruce) o si lleva 2, 3 o 5 barras seguidas cumpliéndose. Esta última es la confirmación por velas: reduce señales falsas a cambio de entrar un poco más tarde.';
-const labInfoHtml = k => { const i = LAB_INFO[k]; return i ? `<dl class="lab-dl"><dt>Base</dt><dd>${esc(i[0])}</dd><dt>Uso</dt><dd>${esc(i[1])}</dd><dt>Qué indica</dt><dd>${esc(i[2])}</dd></dl>` : '' };
-const LAB_PNAME = { ta: 'Tipo de media', tb: 'Tipo de media', tc: 'Tipo de media', a: 'Períodos', b: 'Períodos', c: 'Períodos', n: 'Períodos', x: 'Nivel', f: 'Media rápida', s: 'Media lenta', g: 'Señal', t: 'Tenkan', k: 'Kijun / desviaciones' };
-const LAB_PRESETS = [
-  ['ichi', 'Ichimoku de la app', { entry: { all: true, c: [{ k: 'cloud', op: 'up' }, { k: 'tk', op: 'up' }, { k: 'chikou', op: 'up' }] }, exit: { all: false, c: [{ k: 'cloud', op: 'dn' }, { k: 'tk', op: 'dn' }] } }],
-  ['med', 'Medias 9/18/30 de la app', { entry: { all: true, c: [{ k: 'ma3', op: 'up' }] }, exit: { all: false, c: [{ k: 'ma3', op: 'dn' }] } }],
-  ['gold', 'Cruce SMA 50 / SMA 200', { entry: { all: true, c: [{ k: 'ma2', op: 'up', p: { ta: 'SMA', a: 50, tb: 'SMA', b: 200 } }] }, exit: { all: false, c: [{ k: 'ma2', op: 'dn', p: { ta: 'SMA', a: 50, tb: 'SMA', b: 200 } }] } }],
-  ['rsi', 'RSI rebote 30 / 70', { entry: { all: true, c: [{ k: 'rsi', op: 'up', m: 'x', p: { n: 14, x: 30 } }] }, exit: { all: false, c: [{ k: 'rsi', op: 'up', p: { n: 14, x: 70 } }] } }],
-  ['macd', 'Cruce MACD', { entry: { all: true, c: [{ k: 'macd', op: 'sup', m: 'x' }] }, exit: { all: false, c: [{ k: 'macd', op: 'sdn' }] } }],
-  ['donch', 'Ruptura de 20 barras', { entry: { all: true, c: [{ k: 'donch', op: 'hi', p: { n: 20 } }] }, exit: { all: false, c: [{ k: 'donch', op: 'lo', p: { n: 10 } }] } }],
-  ['medadx', 'Medias 9/18/30 con filtro ADX > 20', { entry: { all: true, c: [{ k: 'ma3', op: 'up' }, { k: 'adx', op: 'up', p: { n: 14, x: 20 } }] }, exit: { all: false, c: [{ k: 'ma3', op: 'dn' }] } }],
-  ['medchop', 'Medias 9/18/30 sin mercado lateral (Choppiness < 61,8)', { entry: { all: true, c: [{ k: 'ma3', op: 'up' }, { k: 'chop', op: 'dn' }] }, exit: { all: false, c: [{ k: 'ma3', op: 'dn' }] } }],
-  ['boll', 'Bollinger: compra en la banda inferior', { entry: { all: true, c: [{ k: 'boll', op: 'lo' }] }, exit: { all: false, c: [{ k: 'boll', op: 'mup' }] } }],
-];
-const LAB_WINS = { d: [['3m', '3 meses', 3], ['6m', '6 meses', 6], ['12m', '12 meses', 12], ['18m', '18 meses', 18], ['24m', '24 meses', 24]],
-  w: [['1a', '1 año', 12], ['3a', '3 años', 36], ['5a', '5 años', 60], ['10a', '10 años', 120]] };
-
-const labCond = c => { const d = LAB_DEFS[c.k]; return { k: c.k, op: c.op || d.ops[0][0], m: c.m || 'e', p: Object.assign({}, d.p, c.p || {}) } };
-const labFromPreset = id => { const pr = LAB_PRESETS.find(x => x[0] === id)[2]; return { entry: { all: pr.entry.all, c: pr.entry.c.map(labCond) }, exit: { all: pr.exit.all, c: pr.exit.c.map(labCond) } } };
-function labDefault() { return Object.assign({ assets: ['QQQ', 'NVDA'], tf: 'd', cur: CUR, stop: '', tp: '', trail: '', cost: 0.05, sel: null, win: '12m' }, labFromPreset('ichi')) }
-let LAB = null;
-function labLoadCfg() {
-  try { const m = location.hash.match(/^#lab\?c=(.+)$/); if (m) return JSON.parse(decodeURIComponent(escape(atob(m[1])))) } catch (e) { }
-  try { const s = localStorage.getItem('labCfg'); if (s) return JSON.parse(s) } catch (e) { }
-  return null;
-}
-function labSave() { try { localStorage.setItem('labCfg', JSON.stringify(LAB)) } catch (e) { } }
-
-function monthsBack(d, n) { const [y, m, dd] = d.split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 - n, Math.min(dd, 28))); return t.toISOString().slice(0, 10) }
-
-// Series de un activo en la temporalidad elegida
-function labSeries(t, tf) {
-  const rows = tf === 'w' ? (cacheT[t].weekly || []) : cacheT[t].daily;
-  const S = { d: [], o: [], h: [], l: [], c: [], v: [] };
-  for (const r of rows) { if (r[4] == null) continue; S.d.push(typeof r[0] === 'number' ? new Date(r[0] * 1000).toISOString().slice(0, 10) : r[0]); S.o.push(r[1]); S.h.push(r[2]); S.l.push(r[3]); S.c.push(r[4]); S.v.push(r[5] || 0) }
-  return S;
-}
-
-function labSignals(S, rule, fallbackNot) {
-  if (!rule.c.length) return fallbackNot ? fallbackNot.map(x => !x) : S.c.map(() => false);
-  const arrs = rule.c.map(c => { const d = LAB_DEFS[c.k]; const r = d.calc(S, c.p)[c.op];
-    if (c.m === 'x') return r.map((x, i) => x === true && i > 0 && r[i - 1] === false);
-    const nb = /^c(\d+)$/.exec(c.m); if (nb) { const k = +nb[1]; return r.map((x, i) => { if (x == null) return null; for (let j = Math.max(0, i - k + 1); j <= i; j++) if (r[j] !== true) return false; return i >= k - 1 }) }
-    return r });
-  return (rule.all ? labAnd : labOr)(...arrs).map(x => x === true);
-}
-function labLines(S, cfg) {
-  const seen = new Set(), out = [];
-  for (const c of [...cfg.entry.c, ...cfg.exit.c]) { const r = LAB_DEFS[c.k].calc(S, c.p); for (const [n, v] of r.lines || []) if (!seen.has(n)) { seen.add(n); out.push([n, v]) } }
-  return out;
-}
-
-// Señal al cierre de la barra i, ejecución en la apertura de i+1. Stops dentro de la barra.
-// K: valor del dólar en pesos por barra (null = medir en dólares). Las señales y los stops usan el precio en dólares;
-// al comprar se convierten pesos a dólares y al vender se vuelve a pesos.
-function labBacktest(S, E, X, o, i0, K) {
-  const n = S.c.length, cost = o.cost, k = i => K ? K[i] : 1; let pos = 0, cash = 1, sh = 0, pin = 0, kin = 1, din = null, peak = 0, inMkt = 0;
-  const trades = [], eq = [], ev = [];
-  const sell = (i, px, why) => { cash = sh * px * k(i) * (1 - cost); sh = 0; pos = 0; trades.push({ in: din, pin, out: S.d[i], pout: px, ret: px * k(i) / (pin * kin) * (1 - cost) ** 2 - 1, why }); ev.push({ d: S.d[i], t: 'sell', p: px }) };
-  for (let i = i0; i < n; i++) {
-    if (i > i0) {
-      if (pos === 0 && E[i - 1]) { sh = cash * (1 - cost) / (S.o[i] * k(i)); cash = 0; pos = 1; pin = S.o[i]; kin = k(i); din = S.d[i]; peak = S.o[i]; ev.push({ d: S.d[i], t: 'buy', p: S.o[i] }) }
-      else if (pos === 1 && X[i - 1]) sell(i, S.o[i], 'regla');
+// ---------- Análisis técnico: velas diarias o semanales con SMA, EMA e Ichimoku configurables y líneas dibujadas a mano ----------
+const TA_COL = { sma: ['#d0661b', '#9b3fb5', '#7a6a14'], ema: ['#2a9bb0', '#d94c8a'], tenkan: '#4b5fd6', kijun: '#c73a3a', spanA: '#0f8a5f', spanB: '#b0702a', chikou: '#8a8a8a' };
+const taDefault = () => ({ t: 'QQQ', tf: 'd', sma: [{ on: 1, n: 20 }, { on: 1, n: 50 }, { on: 0, n: 200 }], ema: [{ on: 1, n: 9 }, { on: 0, n: 21 }], ichi: { on: 0, a: 9, b: 26, c: 52, d: 26 }, ext: 1 });
+let TA = (() => { try { const c = JSON.parse(localStorage.getItem('taCfg')); if (c && c.sma && c.ema && c.ichi) return c } catch (e) { } return taDefault() })();
+let TAD = (() => { try { return JSON.parse(localStorage.getItem('taDraw')) || {} } catch (e) { return {} } })();
+let taTool = null, taFirst = null;
+const taSave = () => { try { localStorage.setItem('taCfg', JSON.stringify(TA)); localStorage.setItem('taDraw', JSON.stringify(TAD)) } catch (e) { } };
+const taKey = () => TA.t + '|' + TA.tf;
+// Punto medio entre el máximo y el mínimo de los últimos n períodos (base de las líneas de Ichimoku)
+const taMid = (h, l, n) => h.map((_, i) => i < n - 1 ? null : (Math.max(...h.slice(i - n + 1, i + 1)) + Math.min(...l.slice(i - n + 1, i + 1))) / 2);
+const taTime = x => typeof x === 'string' ? x : typeof x === 'number' ? new Date(x * 1000).toISOString().slice(0, 10) : x && x.year ? `${x.year}-${String(x.month).padStart(2, '0')}-${String(x.day).padStart(2, '0')}` : null;
+// Fechas hacia adelante para proyectar la nube de Ichimoku: días hábiles en diario, semanas en semanal
+function taFuture(last, n, tf) { const out = []; const d = new Date(last + 'T12:00:00Z'); while (out.length < n) { d.setUTCDate(d.getUTCDate() + (tf === 'w' ? 7 : 1)); if (tf === 'w' || (d.getUTCDay() % 6)) out.push(d.toISOString().slice(0, 10)) } return out }
+const taNum = (v, lo, hi) => { const x = Math.round(+v); return isFinite(x) && x >= lo && x <= hi ? x : null };
+async function renderTA(view) {
+  const q = location.hash.match(/[?&]t=([^&]+)/); if (q && ORDER.includes(decodeURIComponent(q[1]))) TA.t = decodeURIComponent(q[1]);
+  if (!ORDER.includes(TA.t)) TA.t = ORDER.includes('QQQ') ? 'QQQ' : ORDER[0];
+  const bot = new Set(SUM.bot || []), IDX = ['SP500', 'NASDAQ', 'QQQ', 'ACWI'];
+  const grp = [['Índices', ORDER.filter(t => IDX.includes(t))], ['Cartera del bot', ORDER.filter(t => bot.has(t) && !IDX.includes(t))], ['Otros activos', ORDER.filter(t => !bot.has(t) && !IDX.includes(t))]].filter(g => g[1].length);
+  const num = (id, v, lo, hi) => `<input type="number" id="${id}" value="${v}" min="${lo}" max="${hi}" step="1" style="width:4.2em">`;
+  const sw = c => `<i style="display:inline-block;width:12px;height:3px;border-radius:2px;background:${c};vertical-align:middle;margin-right:4px"></i>`;
+  view.innerHTML = `<section class="panel"><div class="row"><h2>Análisis técnico</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="tat" aria-label="Activo">${grp.map(([l, ts]) => `<optgroup label="${l}">${ts.map(t => `<option value="${t}" ${t === TA.t ? 'selected' : ''}>${t}${RUBRO[t] ? ' · ' + esc(RUBRO[t]) : ''}</option>`).join('')}</optgroup>`).join('')}</select>
+    <span class="seg" id="tatf"><button data-v="d" aria-pressed="${TA.tf === 'd'}">Diario</button><button data-v="w" aria-pressed="${TA.tf === 'w'}">Semanal</button></span></div></div>
+    <div class="lab-top" style="margin-top:10px"><span class="seg" id="tatool"><button data-v="trend" aria-pressed="${taTool === 'trend'}">Línea de tendencia</button><button data-v="hline" aria-pressed="${taTool === 'hline'}">Línea horizontal</button></span>
+      <button class="btn" id="taundo">Borrar la última</button><button class="btn" id="taclr">Borrar todas</button>
+      <label class="muted" style="font-size:.85rem"><input type="checkbox" id="taext" ${TA.ext ? 'checked' : ''}> Extender tendencias hasta hoy</label></div>
+    <p class="note" id="tahint" style="margin:6px 0"></p>
+    <div class="chart" id="tac" style="height:480px"></div><div class="legend" id="taleg"></div>
+    <h3 style="margin:14px 0 6px">Indicadores</h3>
+    <div class="toggles" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px 16px">
+      ${TA.sma.map((x, i) => `<label>${sw(TA_COL.sma[i])}<input type="checkbox" data-k="sma" data-i="${i}" ${x.on ? 'checked' : ''}> SMA ${num('sma' + i, x.n, 2, 400)}</label>`).join('')}
+      ${TA.ema.map((x, i) => `<label>${sw(TA_COL.ema[i])}<input type="checkbox" data-k="ema" data-i="${i}" ${x.on ? 'checked' : ''}> EMA ${num('ema' + i, x.n, 2, 400)}</label>`).join('')}
+    </div>
+    <div class="toggles" style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:10px;align-items:center">
+      <label><input type="checkbox" data-k="ichi" ${TA.ichi.on ? 'checked' : ''}> <b>Ichimoku</b></label>
+      <label>${sw(TA_COL.tenkan)}Tenkan ${num('ia', TA.ichi.a, 2, 200)}</label><label>${sw(TA_COL.kijun)}Kijun ${num('ib', TA.ichi.b, 2, 200)}</label>
+      <label>${sw(TA_COL.spanB)}Senkou B ${num('ic', TA.ichi.c, 2, 300)}</label><label>Desplazamiento ${num('id', TA.ichi.d, 1, 100)}</label>
+      <button class="lnk" id="tarst">Volver a los valores por defecto</button></div>
+    <p class="note"><b>Cómo dibujar.</b> Elige "Línea de tendencia" y toca dos velas en el gráfico; "Línea horizontal" pide un solo toque. Las líneas se guardan en este navegador para cada activo y temporalidad. <b>Indicadores.</b> SMA es la media simple de los cierres; EMA da más peso a los últimos. En Ichimoku, Senkou A (verde) es el promedio de Tenkan y Kijun y Senkou B (café) el punto medio de su período; ambas se proyectan hacia adelante formando la nube, y Chikou (gris punteado) es el cierre desplazado hacia atrás. Precios sin ajustar por dividendos, en dólares.</p></section>`;
+  const hint = view.querySelector('#tahint');
+  const setHint = () => { const n = (TAD[taKey()] || []).length; hint.textContent = taTool === 'trend' ? (taFirst ? 'Toca la segunda vela para terminar la línea.' : 'Toca la primera vela de la línea de tendencia.') : taTool === 'hline' ? 'Toca el precio donde va la línea horizontal.' : n ? `${n} línea${n > 1 ? 's' : ''} dibujada${n > 1 ? 's' : ''} en ${TA.t} ${TA.tf === 'd' ? 'diario' : 'semanal'}.` : 'Sin líneas dibujadas en este gráfico.' };
+  let D;
+  try { if (!cacheT[TA.t]) cacheT[TA.t] = await getJSON('data/' + TA.t + '.json'); D = cacheT[TA.t] } catch (e) { view.querySelector('#tac').innerHTML = '<p class="empty">No se pudieron leer los datos de ' + esc(TA.t) + '.</p>'; return }
+  if (curRoute !== 'analisis') return;
+  let ch = null, cs = null, keep = null;
+  const draw = () => {
+    if (ch) { keep = ch.timeScale().getVisibleLogicalRange(); clearCharts() }
+    const raw = (TA.tf === 'd' ? D.daily : (D.weekly && D.weekly.length ? D.weekly : D.daily)).filter(r => r[4] != null);
+    const B = raw.map(r => ({ d: r[0].slice(0, 10), o: r[1], h: r[2], l: r[3], c: r[4], v: r[5] })), c = B.map(b => b.c), T = B.map(b => b.d), N = B.length;
+    const ix = new Map(T.map((d, i) => [d, i]));
+    const el = view.querySelector('#tac'); el.innerHTML = '';
+    ch = mk(el); const up = css('--up'), dn = css('--down');
+    cs = ch.addCandlestickSeries({ upColor: up, downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn });
+    cs.setData(B.map(b => ({ time: b.d, open: b.o, high: b.h, low: b.l, close: b.c })));
+    const vs = ch.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false });
+    ch.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } }); cs.priceScale().applyOptions({ scaleMargins: { top: 0.06, bottom: 0.18 } });
+    vs.setData(B.map(b => ({ time: b.d, value: b.v || 0, color: (b.c >= b.o ? up : dn) + '55' })));
+    const leg = [];
+    const line = (vals, color, w, style, times = T) => { const s = ch.addLineSeries({ color, lineWidth: w, lineStyle: style || 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(vals.map((v, i) => v == null ? null : { time: times[i], value: v }).filter(Boolean)); return s };
+    const lastOf = v => { for (let i = v.length - 1; i >= 0; i--)if (v[i] != null) return v[i]; return null };
+    TA.sma.forEach((x, i) => { if (!x.on) return; const v = sma(c, x.n); line(v, TA_COL.sma[i], 1.5); leg.push([TA_COL.sma[i], `SMA ${x.n}`, lastOf(v)]) });
+    TA.ema.forEach((x, i) => { if (!x.on) return; const v = ema(c, x.n); line(v, TA_COL.ema[i], 1.5); leg.push([TA_COL.ema[i], `EMA ${x.n}`, lastOf(v)]) });
+    if (TA.ichi.on) {
+      const { a, b, c: cc, d } = TA.ichi, h = B.map(x => x.h), l = B.map(x => x.l);
+      const ten = taMid(h, l, a), kij = taMid(h, l, b), sB = taMid(h, l, cc), sA = ten.map((x, i) => x != null && kij[i] != null ? (x + kij[i]) / 2 : null);
+      // Senkou A y B se dibujan d períodos adelante; la parte que cae después de la última vela usa fechas futuras
+      const allT = T.concat(taFuture(T[N - 1], d, TA.tf)), fw = v => allT.map((_, j) => j - d >= 0 && j - d < N ? v[j - d] : null);
+      line(fw(sA), TA_COL.spanA, 1, 0, allT); line(fw(sB), TA_COL.spanB, 1, 0, allT);
+      line(ten, TA_COL.tenkan, 1.5); line(kij, TA_COL.kijun, 1.5); line(c.map((_, i) => i + d < N ? c[i + d] : null), TA_COL.chikou, 1, 1);
+      leg.push([TA_COL.tenkan, `Tenkan ${a}`, lastOf(ten)], [TA_COL.kijun, `Kijun ${b}`, lastOf(kij)], [TA_COL.spanA, 'Senkou A', lastOf(fw(sA))], [TA_COL.spanB, `Senkou B ${cc}`, lastOf(fw(sB))], [TA_COL.chikou, `Chikou ${d}`, null]);
     }
-    if (pos === 1) {
-      const st = [o.stop ? pin * (1 - o.stop) : null, o.trail ? peak * (1 - o.trail) : null].filter(x => x != null);
-      const sp = st.length ? Math.max(...st) : null, tp = o.tp ? pin * (1 + o.tp) : null;
-      if (sp != null && S.l[i] <= sp) sell(i, Math.min(S.o[i], sp), 'stop');
-      else if (tp != null && S.h[i] >= tp) sell(i, Math.max(S.o[i], tp), 'objetivo');
-      else { peak = Math.max(peak, S.h[i]); inMkt++ }
-    }
-    eq.push(cash + sh * S.c[i] * k(i));
-  }
-  let pk = eq[0], mdd = 0; for (const e of eq) { pk = Math.max(pk, e); mdd = Math.min(mdd, e / pk - 1) }
-  const w = trades.filter(t => t.ret > 0).map(t => t.ret), l = trades.filter(t => t.ret <= 0).map(t => t.ret);
-  const open = pos === 1 ? { in: din, pin, ret: S.c[n - 1] * k(n - 1) / (pin * kin) * (1 - cost) - 1 } : null;
-  const bhv = i => S.c[i] * k(i) / (S.o[i0] * k(i0));
-  let bpk = 1, bdd = 0; for (let i = i0; i < n; i++) { bpk = Math.max(bpk, bhv(i)); bdd = Math.min(bdd, bhv(i) / bpk - 1) }
-  return { ret: eq[eq.length - 1] - 1, bh: bhv(n - 1) - 1, trades: trades.length, win: trades.length ? w.length / trades.length : null,
-    avg: trades.length ? trades.reduce((a, t) => a + t.ret, 0) / trades.length : null, pf: l.length && l.reduce((a, b) => a + b, 0) < 0 ? w.reduce((a, b) => a + b, 0) / -l.reduce((a, b) => a + b, 0) : null,
-    dd: mdd, bhdd: bdd, expo: inMkt / Math.max(1, n - i0), open, from: S.d[i0], list: trades, eq, ev, i0 };
-}
-
-function labRunAsset(t, cfg) {
-  const S = labSeries(t, cfg.tf); if (S.c.length < 30) return null;
-  const E = labSignals(S, cfg.entry), X = labSignals(S, cfg.exit, labSignals(S, { all: cfg.entry.all, c: cfg.entry.c.map(c => ({ ...c, m: 'e' })) }));
-  const o = { cost: (+cfg.cost || 0) / 100, stop: +cfg.stop > 0 ? cfg.stop / 100 : null, tp: +cfg.tp > 0 ? cfg.tp / 100 : null, trail: +cfg.trail > 0 ? cfg.trail / 100 : null };
-  let K = null;
-  if (cfg.cur === 'CLP' && cacheT.USDCLP) { const fx = (cfg.tf === 'w' ? cacheT.USDCLP.weekly : cacheT.USDCLP.daily).filter(r => r[4] != null).map(r => [r[0], r[4]]); if (fx.length) K = S.d.map(d => fxAt(fx, d)) }
-  const res = {}; const last = S.d[S.d.length - 1];
-  for (const [k, , m] of LAB_WINS[cfg.tf]) {
-    const start = monthsBack(last, m); const i0 = S.d.findIndex(d => d >= start);
-    if (i0 < 0 || (i0 === 0 && (Date.parse(S.d[0]) - Date.parse(start)) / 864e5 > 10)) continue;
-    res[k] = labBacktest(S, E, X, o, i0, K);
-  }
-  return { S, E, X, K, res, state: { inE: E[E.length - 1], inX: X[X.length - 1] } };
-}
-
-// ---------- Interfaz ----------
-let labRes = {}, labTimer = null;
-function labParamInput(c, key, ci, side) {
-  const v = c.p[key];
-  if (key === 'ta' || key === 'tb' || key === 'tc') return `<select data-side="${side}" data-ci="${ci}" data-p="${key}" title="${LAB_PNAME[key]}">${['EMA', 'SMA'].map(x => `<option ${x === v ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
-  return `<input type="number" step="any" min="0" class="lab-n" data-side="${side}" data-ci="${ci}" data-p="${key}" value="${esc(v)}" title="${LAB_PNAME[key] || ''}">`;
-}
-function labCondRow(c, ci, side) {
-  const d = LAB_DEFS[c.k];
-  const parts = d.form.map(f => f === 'op' ? `<select data-side="${side}" data-ci="${ci}" data-f="op">${d.ops.map(([k, l]) => `<option value="${k}" ${k === c.op ? 'selected' : ''}>${l}</option>`).join('')}</select>`
-    : f in d.p ? labParamInput(c, f, ci, side) : f === 'y' ? '<span>y</span>' : `<span>${esc(f)}</span>`).join('');
-  return `<div class="lab-cond">
-    <select data-side="${side}" data-ci="${ci}" data-f="k" title="Indicador">${Object.entries(LAB_DEFS).map(([k, x]) => `<option value="${k}" ${k === c.k ? 'selected' : ''}>${x.name}</option>`).join('')}</select>
-    <span class="lab-expr">${parts}</span>
-    <select data-side="${side}" data-ci="${ci}" data-f="m" title="Cuándo cuenta"><option value="e" ${c.m === 'e' ? 'selected' : ''}>mientras se cumpla</option><option value="x" ${c.m === 'x' ? 'selected' : ''}>solo el día que empieza</option>${[2, 3, 5].map(k => `<option value="c${k}" ${c.m === 'c' + k ? 'selected' : ''}>si lleva ${k} barras seguidas</option>`).join('')}</select>
-    <button class="lab-x" data-side="${side}" data-del="${ci}" title="Quitar" aria-label="Quitar condición">×</button>
-    <details class="lab-info"><summary>¿Qué es ${esc(d.name)}?</summary>${labInfoHtml(c.k)}</details></div>`;
-}
-function labRuleBox(side, title, help) {
-  const r = LAB[side];
-  return `<div class="lab-rule"><div class="row"><h3>${title}</h3><div class="seg" data-all="${side}"><button data-v="1" aria-pressed="${r.all}">Todas (Y)</button><button data-v="0" aria-pressed="${!r.all}">Cualquiera (O)</button></div></div>
-    <p class="sub">${help}</p>${r.c.map((c, i) => labCondRow(c, i, side)).join('') || '<p class="muted" style="font-size:.8rem;margin:4px 0">Sin condiciones.</p>'}
-    <button class="btn" data-add="${side}">+ Agregar condición</button></div>`;
-}
-
-function renderLab(view) {
-  if (/^#lab\?c=/.test(location.hash)) { LAB = null; const c = labLoadCfg(); history.replaceState(null, '', '#lab'); if (c) { LAB = c; labSave() } }
-  if (!LAB) { LAB = labLoadCfg() || labDefault() }
-  for (const s of ['entry', 'exit']) LAB[s].c = LAB[s].c.map(labCond);
-  if (!LAB.cur) LAB.cur = 'USD';
-  LAB.assets = LAB.assets.filter(t => ORDER.includes(t)); if (!LAB.assets.length) LAB.assets = [ORDER[0]];
-  if (!LAB_WINS[LAB.tf].some(w => w[0] === LAB.win)) LAB.win = LAB_WINS[LAB.tf][LAB.tf === 'd' ? 2 : 1][0];
-  view.innerHTML = `
-  <section class="panel"><h2>Laboratorio de estrategias</h2>
-    <p class="sub">Elige activos, arma reglas de compra y venta con distintos indicadores y compara el resultado con comprar y mantener en varios plazos. Solo posiciones compradas. La señal se toma al cierre y se ejecuta en la apertura siguiente.</p>
-    <div class="lab-top">
-      <label>Partir de <select id="lpre"><option value="">Elegir plantilla…</option>${LAB_PRESETS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
-      <label>Moneda <span class="seg" id="lcur"><button data-c="USD" aria-pressed="${LAB.cur === 'USD'}">Dólares</button><button data-c="CLP" aria-pressed="${LAB.cur === 'CLP'}">Pesos</button></span></label>
-      <label>Velas <span class="seg" id="ltf"><button data-v="d" aria-pressed="${LAB.tf === 'd'}">Diarias (2 años)</button><button data-v="w" aria-pressed="${LAB.tf === 'w'}">Semanales (10 años)</button></span></label>
-    </div>
-    <h3 class="lab-h">Activos <button class="lnk" id="lall">todos</button> <button class="lnk" id="lnone">ninguno</button></h3>
-    <div class="lab-assets">${ORDER.map(t => `<label class="chip"><input type="checkbox" value="${t}" ${LAB.assets.includes(t) ? 'checked' : ''}> ${t}</label>`).join('')}</div>
-    <div class="grid-rules">
-      ${labRuleBox('entry', 'Compra cuando…', 'Se compra en la apertura siguiente a la barra en que se cumplen.')}
-      ${labRuleBox('exit', 'Vende cuando…', 'Si no hay condiciones de venta, vende cuando las condiciones de compra dejan de cumplirse.')}
-    </div>
-    <div class="lab-top">
-      <label title="Vende si el precio cae este % bajo el precio de compra">Stop de pérdida <input type="number" step="any" min="0" class="lab-n" id="lstop" value="${esc(LAB.stop)}"> %</label>
-      <label title="Vende si el precio cae este % desde el máximo alcanzado durante la operación">Stop móvil <input type="number" step="any" min="0" class="lab-n" id="ltrail" value="${esc(LAB.trail)}"> %</label>
-      <label title="Vende si el precio sube este % sobre el precio de compra">Toma de ganancia <input type="number" step="any" min="0" class="lab-n" id="ltp" value="${esc(LAB.tp)}"> %</label>
-      <label title="Comisión y deslizamiento por cada compra o venta">Costo por operación <input type="number" step="any" min="0" class="lab-n" id="lcost" value="${esc(LAB.cost)}"> %</label>
-      <button class="btn" id="llink">Copiar enlace a esta prueba</button>
-    </div>
-    <details class="lab-guide"><summary>Guía de indicadores: base, uso y qué indica cada uno</summary>
-      <p class="sub" style="margin-top:8px">${esc(LAB_MODES_INFO)}</p>
-      ${Object.entries(LAB_DEFS).map(([k, d]) => `<details class="lab-info"><summary>${esc(d.name)}</summary>${labInfoHtml(k)}</details>`).join('')}
-    </details>
-  </section>
-  <section class="panel" id="lres"><p class="empty">Calculando…</p></section>
-  <section class="panel" id="ldet" hidden></section>`;
-  labWire(view); labCompute();
-  rerender = () => labCompute();
-}
-
-function labWire(view) {
-  const re = () => { labSave(); renderLab(view) };
-  view.querySelector('#lpre').onchange = e => { if (!e.target.value) return; Object.assign(LAB, labFromPreset(e.target.value)); re() };
-  view.querySelector('#lcur').onclick = e => { const b = e.target.closest('button'); if (!b) return; LAB.cur = b.dataset.c; re() };
-  view.querySelector('#ltf').onclick = e => { const b = e.target.closest('button'); if (!b) return; LAB.tf = b.dataset.v; re() };
-  view.querySelector('.lab-assets').onchange = () => { LAB.assets = [...view.querySelectorAll('.lab-assets input:checked')].map(x => x.value); if (LAB.sel && !LAB.assets.includes(LAB.sel)) LAB.sel = null; labSave(); labCompute() };
-  view.querySelector('#lall').onclick = () => { LAB.assets = [...ORDER]; re() };
-  view.querySelector('#lnone').onclick = () => { LAB.assets = []; re() };
-  for (const [id, k] of [['lstop', 'stop'], ['ltrail', 'trail'], ['ltp', 'tp'], ['lcost', 'cost']]) view.querySelector('#' + id).oninput = e => { LAB[k] = e.target.value; labSave(); labSoon() };
-  view.querySelectorAll('[data-all]').forEach(s => s.onclick = e => { const b = e.target.closest('button'); if (!b) return; LAB[s.dataset.all].all = b.dataset.v === '1'; re() });
-  view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => { const side = b.dataset.add; const prev = LAB[side].c[LAB[side].c.length - 1]; LAB[side].c.push(labCond({ k: prev ? prev.k : 'pma', op: side === 'exit' ? 'dn' : undefined })); if (!LAB_DEFS[LAB[side].c.at(-1).k].ops.some(o => o[0] === LAB[side].c.at(-1).op)) LAB[side].c.at(-1).op = LAB_DEFS[LAB[side].c.at(-1).k].ops[0][0]; re() });
-  view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { LAB[b.dataset.side].c.splice(+b.dataset.del, 1); re() });
-  view.querySelectorAll('.lab-cond select, .lab-cond input').forEach(el => {
-    const ev = el.tagName === 'INPUT' ? 'oninput' : 'onchange';
-    el[ev] = () => {
-      const c = LAB[el.dataset.side].c[+el.dataset.ci];
-      if (el.dataset.f === 'k') { LAB[el.dataset.side].c[+el.dataset.ci] = labCond({ k: el.value }); re(); return }
-      if (el.dataset.f === 'op') c.op = el.value; else if (el.dataset.f === 'm') c.m = el.value;
-      else if (el.dataset.p) c.p[el.dataset.p] = el.tagName === 'SELECT' ? el.value : (el.value === '' ? c.p[el.dataset.p] : +el.value);
-      labSave(); labSoon();
-    };
-  });
-  view.querySelector('#llink').onclick = async e => {
-    const url = location.href.split('#')[0] + '#lab?c=' + btoa(unescape(encodeURIComponent(JSON.stringify(LAB))));
-    try { await navigator.clipboard.writeText(url); e.target.textContent = 'Enlace copiado' } catch (_) { prompt('Copia este enlace:', url) }
+    // Líneas dibujadas: tendencia entre dos velas (opcionalmente prolongada hasta la última) y horizontales
+    const acc = css('--accent'), L = TAD[taKey()] || [];
+    L.forEach(o => {
+      if (o.k === 'h') { cs.createPriceLine({ price: o.p, color: acc, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '' }); return }
+      let [p, q] = [o.a, o.b].sort((x, y) => x[0].localeCompare(y[0])); const i1 = ix.get(p[0]), i2 = ix.get(q[0]);
+      if (i1 == null || i2 == null) return;
+      const pts = [{ time: p[0], value: p[1] }, { time: q[0], value: q[1] }];
+      if (TA.ext && i2 > i1 && i2 < N - 1) pts.push({ time: T[N - 1], value: p[1] + (q[1] - p[1]) * (N - 1 - i1) / (i2 - i1) });
+      if (i1 === i2) return;
+      const s = ch.addLineSeries({ color: acc, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(pts);
+    });
+    if (taFirst) cs.setMarkers([{ time: taFirst[0], position: 'aboveBar', shape: 'circle', color: acc }]);
+    const lc = c[N - 1];
+    view.querySelector('#taleg').innerHTML = `<span><b>${esc(TA.t)}</b>&nbsp;${fmt(lc)} <span class="${cls(N > 1 ? lc / c[N - 2] - 1 : null)}">${pct(N > 1 ? lc / c[N - 2] - 1 : null)}</span>&nbsp;<span class="muted">${TA.tf === 'd' ? 'al cierre del' : 'semana del'} ${fdate(T[N - 1])}</span></span>` + leg.map(([col, n, v]) => `<span><i style="background:${col}"></i>${n}${v == null ? '' : ': ' + fmt(v)}</span>`).join('');
+    if (keep) ch.timeScale().setVisibleLogicalRange(keep); else { const show = Math.min(N, TA.tf === 'd' ? 130 : 160, Math.max(40, Math.round(el.clientWidth / 7))); ch.timeScale().setVisibleLogicalRange({ from: N - show, to: N + (TA.ichi.on ? TA.ichi.d : 3) }) }
+    ch.subscribeClick(e => {
+      if (!taTool || !e.point) return; const pr = cs.coordinateToPrice(e.point.y); if (pr == null) return;
+      if (taTool === 'hline') { (TAD[taKey()] = TAD[taKey()] || []).push({ k: 'h', p: +pr.toFixed(4) }); taTool = null }
+      else { const t = taTime(e.time); if (!t || !ix.has(t)) return; if (!taFirst) taFirst = [t, +pr.toFixed(4)]; else { if (t !== taFirst[0]) (TAD[taKey()] = TAD[taKey()] || []).push({ k: 't', a: taFirst, b: [t, +pr.toFixed(4)] }); taFirst = null; taTool = null } }
+      taSave(); syncTools(); setHint(); draw();
+    });
   };
-}
-function labSoon() { clearTimeout(labTimer); labTimer = setTimeout(labCompute, 250) }
-
-async function labCompute() {
-  const box = document.getElementById('lres'); if (!box) return;
-  const cfg = LAB;
-  if (!cfg.assets.length) { box.innerHTML = '<p class="empty">Elige al menos un activo.</p>'; document.getElementById('ldet').hidden = true; return }
-  if (!cfg.entry.c.length) { box.innerHTML = '<p class="empty">Agrega al menos una condición de compra.</p>'; document.getElementById('ldet').hidden = true; return }
-  const miss = cfg.assets.filter(t => !cacheT[t]).concat(cfg.cur === 'CLP' && !cacheT.USDCLP ? ['USDCLP'] : []);
-  if (miss.length) { box.innerHTML = '<p class="empty">Cargando datos…</p>'; await Promise.all(miss.map(t => getJSON('data/' + t + '.json').then(d => { cacheT[t] = d }).catch(() => { }))) }
-  if (curRoute !== 'lab' || cfg !== LAB) return;
-  labRes = {};
-  for (const t of cfg.assets) { if (!cacheT[t]) continue; try { const r = labRunAsset(t, cfg); if (r) labRes[t] = r } catch (e) { console.error(t, e) } }
-  const W = LAB_WINS[cfg.tf], ts = cfg.assets.filter(t => labRes[t]);
-  let beat = 0, tot = 0;
-  const avg = {}; for (const [k] of W) { const xs = ts.map(t => labRes[t].res[k]).filter(Boolean); if (xs.length) avg[k] = { ret: xs.reduce((a, b) => a + b.ret, 0) / xs.length, bh: xs.reduce((a, b) => a + b.bh, 0) / xs.length, n: xs.length }; for (const x of xs) { tot++; if (x.ret > x.bh) beat++ } }
-  const cell = r => r ? `<td><span class="num ${cls(r.ret)}">${pct(r.ret)}</span><span class="rb">B&amp;H ${pct(r.bh)} · ${r.trades} op.</span></td>` : '<td class="muted">–</td>';
-  const nowTxt = r => { const st = r.state, open = Object.values(r.res).slice(-1)[0]?.open; return open ? (st.inX ? '<span class="sig sig-sell">VENTA</span>' : '<span class="sig sig-long">Comprado</span>') : (st.inE ? '<span class="sig sig-buy">COMPRA</span>' : '<span class="sig sig-flat">Fuera</span>') };
-  box.innerHTML = `<div class="row"><h2>Resultados</h2><span class="muted" style="font-size:.8rem">La estrategia supera a comprar y mantener en <b>${beat} de ${tot}</b> casos (activo × plazo).</span></div>
-    <p class="sub">Retorno de la estrategia y, debajo, el de comprar y mantener (B&amp;H) en el mismo plazo${cfg.cur === 'CLP' && cacheT.USDCLP ? ', medidos en pesos chilenos: incluyen la variación del dólar. Las señales usan el precio en dólares' : cfg.cur === 'CLP' ? ', en dólares porque todavía no está descargado el valor del dólar en pesos' : ', en dólares'}. Cada plazo parte sin posición. La columna "Hoy" dice qué indica la regla con la última vela. Clic en una fila para ver el detalle.</p>
-    <div class="tablebox"><table><thead><tr><th>Activo</th><th style="text-align:left">Hoy</th>${W.map(([, l]) => `<th>${l}</th>`).join('')}</tr></thead><tbody>
-    ${ts.map(t => `<tr data-t="${t}" ${cfg.sel === t ? 'style="background:var(--accent-soft)"' : ''}><td><span class="tk">${t}</span><span class="rb">${esc(RUBRO[t] || '')}</span></td><td style="text-align:left">${nowTxt(labRes[t])}</td>${W.map(([k]) => cell(labRes[t].res[k])).join('')}</tr>`).join('')}
-    ${ts.length > 1 ? `<tr style="cursor:default;font-weight:600"><td>Promedio</td><td></td>${W.map(([k]) => avg[k] ? `<td><span class="num ${cls(avg[k].ret)}">${pct(avg[k].ret)}</span><span class="rb">B&amp;H ${pct(avg[k].bh)}</span></td>` : '<td>–</td>').join('')}</tr>` : ''}
-    </tbody></table></div>
-    ${cfg.assets.filter(t => !labRes[t]).length ? `<p class="note">Sin datos suficientes: ${cfg.assets.filter(t => !labRes[t]).join(', ')}.</p>` : ''}
-    <p class="note">Resultados pasados no garantizan resultados futuros. Las velas en curso (hoy o esta semana) pueden cambiar hasta el cierre.</p>`;
-  box.querySelector('tbody').onclick = e => { const tr = e.target.closest('tr[data-t]'); if (!tr) return; cfg.sel = tr.dataset.t; labSave(); labCompute(); setTimeout(() => document.getElementById('ldet').scrollIntoView({ behavior: 'smooth', block: 'start' }), 50) };
-  if (!cfg.sel || !labRes[cfg.sel]) cfg.sel = ts[0];
-  labDetail();
-}
-
-const i0Of = r => r.i0;
-function labDetail() {
-  const box = document.getElementById('ldet'); const cfg = LAB, t = cfg.sel, R = labRes[t];
-  clearCharts();
-  if (!R) { box.hidden = true; return }
-  box.hidden = false;
-  const W = LAB_WINS[cfg.tf].filter(([k]) => R.res[k]); if (!R.res[cfg.win]) cfg.win = W[W.length - 1][0];
-  const r = R.res[cfg.win], S = R.S, kd = d => R.K ? R.K[S.d.indexOf(d)] : 1;
-  const pN = x => x == null ? '–' : pct(x);
-  box.innerHTML = `<div class="row"><h2>${t} <span class="muted" style="font-size:.85rem;font-weight:400">${esc(RUBRO[t] || '')}</span></h2>
-    <div class="seg" id="lwin">${W.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === cfg.win}">${l}</button>`).join('')}</div></div>
-    <p class="sub">Desde ${fdate(r.from)} hasta ${fdate(S.d[S.d.length - 1])}, con velas ${cfg.tf === 'd' ? 'diarias' : 'semanales'}. Precios y rentabilidades en ${cfg.cur === 'CLP' && R.K ? `pesos (dólar de ${fmt(R.K[i0Of(r)], 0)} a ${fmt(R.K[R.K.length - 1], 0)})` : 'dólares'}.</p>
-    <div class="chart" id="lpc" style="height:380px"></div>
-    <div class="legend" id="lleg"></div>
-    <div class="grid2" style="margin-top:16px"><div><p class="sub" style="margin:0 0 4px">Capital de la estrategia vs comprar y mantener (base 100)</p><div class="chart sm" id="lec" style="height:200px"></div></div>
-    <div class="levels" style="align-content:start">${[['Retorno estrategia', pN(r.ret)], ['Comprar y mantener', pN(r.bh)], ['Operaciones', r.trades], ['% ganadoras', r.win == null ? '–' : fmt(r.win * 100, 0) + '%'], ['Promedio por operación', pN(r.avg)], ['Profit factor', r.pf == null ? '–' : fmt(r.pf, 2)], ['Caída máxima', pN(r.dd)], ['Caída máx. B&H', pN(r.bhdd)], ['Tiempo invertido', fmt(r.expo * 100, 0) + '%'], ['Operación abierta', r.open ? pN(r.open.ret) : 'ninguna']].map(([l, v]) => `<div><span class="muted">${l}</span><span class="num">${v}</span></div>`).join('')}</div></div>
-    <h3 class="sub" style="margin:16px 0 6px;color:var(--ink);font-weight:600">Operaciones del período</h3>
-    <div class="tablebox"><table><thead><tr><th>Compra</th><th>Precio</th><th>Venta</th><th>Precio</th><th>Motivo</th><th>Resultado</th></tr></thead><tbody>
-    ${r.open ? `<tr style="cursor:default"><td>${fdate(r.open.in)}</td><td class="num">${fmt(r.open.pin * kd(r.open.in))}</td><td class="muted">abierta</td><td class="num">${fmt(S.c[S.c.length - 1] * kd(S.d[S.d.length - 1]))}</td><td></td><td class="num ${cls(r.open.ret)}">${pct(r.open.ret)}</td></tr>` : ''}
-    ${[...r.list].reverse().map(x => `<tr style="cursor:default"><td>${fdate(x.in)}</td><td class="num">${fmt(x.pin * kd(x.in))}</td><td>${fdate(x.out)}</td><td class="num">${fmt(x.pout * kd(x.out))}</td><td>${{ regla: 'regla de venta', stop: 'stop', objetivo: 'toma de ganancia' }[x.why]}</td><td class="num ${cls(x.ret)}">${pct(x.ret)}</td></tr>`).join('') || (r.open ? '' : '<tr><td colspan="6" class="muted">Sin operaciones en el período.</td></tr>')}
-    </tbody></table></div>`;
-  box.querySelector('#lwin').onclick = e => { const b = e.target.closest('button'); if (!b) return; cfg.win = b.dataset.v; labSave(); labDetail() };
-  const i0 = r.i0, ds = S.d.slice(i0), upc = css('--up'), dnc = css('--down');
-  const ch = mk(box.querySelector('#lpc')); const cs = ch.addCandlestickSeries({ upColor: upc, downColor: dnc, borderUpColor: upc, borderDownColor: dnc, wickUpColor: upc, wickDownColor: dnc });
-  const px = j => R.K ? R.K[j] : 1;
-  cs.setData(ds.map((d, j) => ({ time: d, open: S.o[i0 + j] * px(i0 + j), high: S.h[i0 + j] * px(i0 + j), low: S.l[i0 + j] * px(i0 + j), close: S.c[i0 + j] * px(i0 + j) })));
-  const lines = labLines(S, cfg), leg = [];
-  lines.forEach(([n, v], j) => { const col = PALETTE[(j + 1) % PALETTE.length]; const s = ch.addLineSeries({ color: col, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(ds.map((d, k) => v[i0 + k] == null ? null : { time: d, value: v[i0 + k] * px(i0 + k) }).filter(Boolean)); leg.push(`<span><i style="background:${col}"></i>${esc(n)}</span>`) });
-  box.querySelector('#lleg').innerHTML = leg.join('') + '<span>▲ compra · ▼ venta</span>';
-  cs.setMarkers(r.ev.map(e => ({ time: e.d, position: e.t === 'buy' ? 'belowBar' : 'aboveBar', color: e.t === 'buy' ? upc : dnc, shape: e.t === 'buy' ? 'arrowUp' : 'arrowDown', text: (e.t === 'buy' ? 'C ' : 'V ') + fmt(e.p * px(S.d.indexOf(e.d))) })));
-  ch.timeScale().fitContent();
-  const ec = mk(box.querySelector('#lec'));
-  const es = ec.addLineSeries({ color: css('--accent'), lineWidth: 2, priceLineVisible: false }); es.setData(r.eq.map((v, j) => ({ time: ds[j], value: v * 100 })));
-  const kk = j => R.K ? R.K[i0 + j] / R.K[i0] : 1;
-  const bh = ec.addLineSeries({ color: css('--muted'), lineWidth: 1, lineStyle: 2, priceLineVisible: false }); bh.setData(ds.map((d, j) => ({ time: d, value: S.c[i0 + j] * kk(j) / S.o[i0] * 100 })));
-  ec.timeScale().fitContent();
-}
-
-// ---------- Ranking de combinaciones (data/ranking.json, lo genera scripts/ranking.js) ----------
-let RANK = null, rkTf = 'd', rkWin = 'all', rkSort = 'rel';
-const RK_WINS = { d: [['all', 'Todos los plazos'], ['6m', '6 meses'], ['12m', '12 meses'], ['18m', '18 meses'], ['24m', '24 meses']],
-  w: [['all', 'Todos los plazos'], ['1a', '1 año'], ['3a', '3 años'], ['5a', '5 años'], ['10a', '10 años'], ['2020', 'Año 2020'], ['2022', 'Año 2022']] };
-const RK_SORTS = [['rel', 'Rentabilidad frente a comprar y mantener'], ['beat', 'Casos en que supera a comprar y mantener'], ['risk', 'Casos con mejor retorno por unidad de caída'], ['dd', 'Menor caída máxima']];
-function labLink(cfg) { return '#lab?c=' + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))) }
-async function renderRanking(view) {
-  if (!RANK) { view.innerHTML = '<p class="empty">Cargando ranking…</p>'; try { RANK = await getJSON('data/ranking.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay ranking calculado.</p>'; return } if (curRoute !== 'ranking') return }
-  if (!RK_WINS[rkTf].some(x => x[0] === rkWin)) rkWin = 'all';
-  const key = { rel: x => x.rel, beat: x => x.beat / x.n, risk: x => x.risk / x.n, dd: x => x.dd }[rkSort];
-  const G = s => (s[rkTf] || {})[rkWin];
-  const L = RANK.list.filter(s => G(s) && G(s).n).sort((a, b) => key(G(b)) - key(G(a)));
-  const pos = L.filter(s => G(s).rel > 0).length, bh = L[0] ? G(L[0]) : null;
-  const winLab = RK_WINS[rkTf].find(x => x[0] === rkWin)[1].toLowerCase();
-  const nA = rkTf === 'w' ? (RANK.assetsW || RANK.assets).length : RANK.assets.length;
-  view.innerHTML = `<section class="panel"><h2>Ranking de combinaciones</h2>
-    <p class="sub">${RANK.list.length} combinaciones del Laboratorio probadas en ${nA} activos hasta el ${fdate(RANK.to)}. ${rkTf === 'd' ? 'Velas diarias, plazos de 6 a 24 meses.' : 'Velas semanales: los períodos de cada indicador se cuentan en semanas (una SMA 50 semanal equivale a unos 250 días). Plazos de 1 a 10 años y los años 2020 (caída por la pandemia y rebote) y 2022 (mercado bajista). Los activos con menos historia entran solo en los plazos que alcanzan a cubrir.'} Se recalcula cada día al cierre.</p>
-    <div class="lab-top"><span class="seg" id="rkt"><button data-v="d" aria-pressed="${rkTf === 'd'}">Diarias (2 años)</button><button data-v="w" aria-pressed="${rkTf === 'w'}">Semanales (10 años)</button></span>
-      <span class="seg" id="rkw" style="flex-wrap:wrap">${RK_WINS[rkTf].map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === rkWin}">${l}</button>`).join('')}</span>
-      <label>Ordenar por <select id="rks">${RK_SORTS.map(([k, l]) => `<option value="${k}" ${k === rkSort ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>
-    <p class="note" style="margin-bottom:10px"><b>${pos ? `${pos} combinaciones le ganan` : 'Ninguna combinación le gana'} a comprar y mantener en ${rkWin === 'all' ? 'el conjunto de plazos' : /^20/.test(rkWin) ? 'el ' + winLab : 'el plazo de ' + winLab}.</b> Comprar y mantener rindió una mediana de ${pct(bh && bh.bh)} por activo, con una caída máxima mediana de ${pct(bh && bh.bhdd)}.</p>
-    <div class="tablebox"><table><thead><tr><th>#</th><th style="text-align:left">Combinación</th><th title="Promedio geométrico de (1 + estrategia) / (1 + comprar y mantener) en todos los activos y plazos">vs comprar y mantener</th><th title="Activos × plazos en que la estrategia rinde más">Supera</th><th title="Activos × plazos con mejor retorno dividido por caída máxima">Mejor ret./caída</th><th>Retorno mediano</th><th>Caída mediana</th><th>Op. por activo</th><th>Invertido</th><th></th></tr></thead><tbody>
-    ${L.map((s, i) => { const x = G(s); const cfg = { ...s.cfg, tf: rkTf, assets: rkTf === 'w' ? (RANK.assetsW || RANK.assets) : RANK.assets, sel: null, win: rkTf === 'd' ? (rkWin === 'all' ? '24m' : rkWin) : (/^\d+a$/.test(rkWin) ? rkWin : '10a') };
-      return `<tr style="cursor:default"><td class="num muted">${i + 1}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(s.name)}<span class="rb">${esc(s.group)}</span></td>
-      <td class="num ${cls(x.rel)}">${pct(x.rel)}</td><td class="num">${x.beat} de ${x.n}<span class="rb">${fmt(x.beat / x.n * 100, 0)}%</span></td><td class="num">${x.risk} de ${x.n}<span class="rb">${fmt(x.risk / x.n * 100, 0)}%</span></td>
-      <td class="num ${cls(x.ret)}">${pct(x.ret)}<span class="rb">B&amp;H ${pct(x.bh)}</span></td><td class="num">${pct(x.dd)}<span class="rb">B&amp;H ${pct(x.bhdd)}</span></td><td class="num">${fmt(x.tr, 1)}</td><td class="num">${fmt(x.expo * 100, 0)}%</td>
-      <td><a class="btn" style="text-decoration:none;white-space:nowrap" href="${labLink(cfg)}">Abrir</a></td></tr>` }).join('')}
-    </tbody></table></div>
-    <p class="note"><b>Cómo leerlo.</b> "vs comprar y mantener" compara cuánto terminarías teniendo con la estrategia frente a comprar y mantener, promediado en forma geométrica para que un activo que sube 4.000% no domine el resultado: −10% significa terminar en promedio con un 10% menos de capital. "Supera" cuenta los casos (activo × plazo) en que la estrategia rinde más. "Mejor ret./caída" cuenta los casos en que gana más por cada punto de caída máxima. Retorno y caída son medianas por activo. "Abrir" carga la combinación en el Laboratorio con todos los activos.</p>
-    <p class="note"><b>Cuidado con el sobreajuste.</b> Al probar muchas combinaciones sobre los mismos datos, la que sale primera en parte tuvo suerte. Las más confiables son las que quedan arriba en todos los plazos, no solo en uno. ${rkTf === 'd' ? 'Estos dos años fueron de subidas muy fuertes, el escenario más difícil para cualquier regla que sale del mercado.' : 'En los años 2020 y 2022 cada estrategia parte sin posición el 1 de enero; las de cruce o ruptura que esperan una señal nueva quedan favorecidas en un año que empezó cayendo.'} Resultados pasados no garantizan resultados futuros.</p></section>`;
-  view.querySelector('#rkt').onclick = e => { const b = e.target.closest('button'); if (!b) return; rkTf = b.dataset.v; rkWin = 'all'; renderRanking(view) };
-  view.querySelector('#rkw').onclick = e => { const b = e.target.closest('button'); if (!b) return; rkWin = b.dataset.v; renderRanking(view) };
-  view.querySelector('#rks').onchange = e => { rkSort = e.target.value; renderRanking(view) };
-  rerender = () => { };
+  const syncTools = () => view.querySelectorAll('#tatool button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === taTool));
+  const fresh = () => { keep = null; ch = null; taFirst = null; clearCharts(); draw(); setHint() };
+  view.querySelector('#tat').onchange = e => { TA.t = e.target.value; taSave(); history.replaceState(null, '', '#analisis'); renderTA(view) };
+  view.querySelector('#tatf').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.v === TA.tf) return; TA.tf = b.dataset.v; taSave(); view.querySelectorAll('#tatf button').forEach(x => x.setAttribute('aria-pressed', x === b)); fresh() };
+  view.querySelector('#tatool').onclick = e => { const b = e.target.closest('button'); if (!b) return; taTool = taTool === b.dataset.v ? null : b.dataset.v; taFirst = null; syncTools(); setHint(); draw() };
+  view.querySelector('#taundo').onclick = () => { const L = TAD[taKey()]; if (L && L.length) L.pop(); taFirst = null; taSave(); setHint(); draw() };
+  view.querySelector('#taclr').onclick = () => { delete TAD[taKey()]; taFirst = null; taSave(); setHint(); draw() };
+  view.querySelector('#taext').onchange = e => { TA.ext = e.target.checked ? 1 : 0; taSave(); draw() };
+  view.querySelector('#tarst').onclick = () => { const d = taDefault(); TA.sma = d.sma; TA.ema = d.ema; TA.ichi = d.ichi; taSave(); renderTA(view) };
+  view.querySelectorAll('input[type=checkbox][data-k]').forEach(cb => cb.onchange = () => { const k = cb.dataset.k; if (k === 'ichi') TA.ichi.on = cb.checked ? 1 : 0; else TA[k][+cb.dataset.i].on = cb.checked ? 1 : 0; taSave(); draw() });
+  view.querySelectorAll('input[type=number]').forEach(inp => inp.onchange = () => {
+    const id = inp.id, lo = +inp.min, hi = +inp.max, v = taNum(inp.value, lo, hi);
+    const ref = /^sma|^ema/.test(id) ? TA[id.slice(0, 3)][+id.slice(3)] : TA.ichi, key = /^sma|^ema/.test(id) ? 'n' : id[1];
+    if (v == null) { inp.value = ref[key]; return }
+    ref[key] = v; inp.value = v; taSave(); draw();
+  });
+  setHint(); draw(); rerender = draw;
 }
 
 // ---------- Carteras: estrategias que buscan ganarle a comprar y mantener (data/portfolio.json, scripts/portfolio.py) ----------
 let PORT = null, ptTab = 'cart', ptWin = '10a', ptUni = 'ix', ptSel = null, ptCw = '12m';
 const PT_WINS = [['10a', '10 años'], ['5a', '5 años'], ['3a', '3 años'], ['2a', '2 años'], ['1a', '1 año'], ['2020', 'Año 2020'], ['2022', 'Año 2022']];
 const PT_NAMES = { SP500: 'S&P 500', NASDAQ: 'Nasdaq', ACWI: 'ACWI', QQQ: 'QQQ' };
+const PT_IDX = [['QQQ', '#2a9bb0'], ['NASDAQ', '#9b3fb5'], ['SP500', '#d0661b'], ['ACWI', '#888']];
 async function renderCarteras(view) {
   if (!PORT) { view.innerHTML = '<p class="empty">Cargando carteras…</p>'; try { PORT = await getJSON('data/portfolio.json') } catch (e) { view.innerHTML = '<p class="empty">Todavía no hay carteras calculadas.</p>'; return } if (curRoute !== 'carteras') return }
   const tabs = `<span class="seg" id="ptt"><button data-v="cart" aria-pressed="${ptTab === 'cart'}">Carteras mensuales (10 años)</button><button data-v="con" aria-pressed="${ptTab === 'con'}">Connors RSI(2) diario</button></span>`;
   if (ptTab === 'con') return renderConnors(view, tabs);
-  const W = PORT.weekly.windows[ptWin], sp = W.bhIdx.SP500, qq = W.bhIdx.QQQ, cur = /^\d+a$/.test(ptWin);
-  const rows = W.rows.filter(r => ptUni === 'ix' ? r.k.startsWith('ix_') : !r.k.startsWith('ix_')).sort((a, b) => b.ret - a.ret);
-  const ew = rows.find(r => r.k === (ptUni === 'ix' ? 'ix_ew' : 'ew'));
-  if (!rows.some(r => r.k === ptSel)) ptSel = rows.find(r => r.k !== ew.k).k;
-  const sel = rows.find(r => r.k === ptSel);
-  const bestBh = Object.entries(W.bh).sort((a, b) => b[1] - a[1])[0];
-  const bSp = rows.filter(r => r.ret > sp.ret).length, bEw = rows.filter(r => r !== ew && r.ret > ew.ret).length;
-  const bRisk = rows.filter(r => r.ret > sp.ret && r.dd >= sp.dd).length;
+  const W = PORT.weekly.windows[ptWin], cur = /^\d+a$/.test(ptWin);
+  // Las 10 estrategias de mayor retorno del universo elegido (sin la cartera de igual peso, que es una referencia)
+  const top = W.rows.filter(r => (ptUni === 'ix' ? r.k.startsWith('ix_') : !r.k.startsWith('ix_')) && !/(^|_)ew$/.test(r.k)).sort((a, b) => b.ret - a.ret).slice(0, 10);
+  const idx = PT_IDX.filter(([t]) => W.bhIdx[t]).map(([t, c]) => ({ k: '_' + t, t, c, name: 'Comprar y mantener ' + (PT_NAMES[t] || t), group: 'Índice', ...W.bhIdx[t], now: [t] }));
+  const sp = W.bhIdx.SP500, qq = W.bhIdx.QQQ, best = [...idx].sort((a, b) => b.ret - a.ret)[0];
+  if (!top.some(r => r.k === ptSel)) ptSel = top[0].k;
+  const sel = top.find(r => r.k === ptSel);
+  const nBest = top.filter(r => r.ret > best.ret).length, nSafe = top.filter(r => r.ret > best.ret && r.dd >= best.dd).length;
   const name = t => PT_NAMES[t] || t;
-  view.innerHTML = `<section class="panel"><h2>Carteras que buscan ganarle a comprar y mantener</h2>
-    <p class="sub">Estrategias de cartera con revisión a fin de mes: rotación por momentum, momentum dual, tendencia de Faber y filtro de régimen. Se compara con comprar y mantener el S&P 500, cada activo y una cartera de igual peso. Cierres mensuales de ${W.universe.length} activos, de ${W.from} a ${W.to}, con un costo de 0,05% por cada compra o venta. Resultados en dólares.</p>
+  const vs = (r, b) => b ? pct((1 + r.ret) / (1 + b.ret) - 1) : '–', vc = (r, b) => b ? cls((1 + r.ret) / (1 + b.ret) - 1) : 'muted';
+  view.innerHTML = `<section class="panel"><h2>Las 10 carteras de mejor rendimiento frente a los índices</h2>
+    <p class="sub">De todas las estrategias de cartera probadas (rotación por momentum, momentum dual, tendencia de Faber y filtro de régimen, con revisión a fin de mes), aquí van las 10 que más rindieron en el plazo elegido, junto a comprar y mantener QQQ, Nasdaq, S&P 500 y ACWI. Cierres mensuales de ${W.from} a ${W.to}, con un costo de 0,05% por cada compra o venta. Resultados en dólares.</p>
     <div class="lab-top">${tabs}</div>
     <div class="lab-top"><span class="seg" id="ptu"><button data-v="ix" aria-pressed="${ptUni === 'ix'}">Solo índices</button><button data-v="all" aria-pressed="${ptUni === 'all'}">Todos los activos</button></span>
       <span class="seg" id="ptw" style="flex-wrap:wrap">${PT_WINS.map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === ptWin}">${l}</button>`).join('')}</span></div>
-    <p class="note" style="margin-bottom:10px"><b>${bSp} de ${rows.length} estrategias rinden más que el S&P 500 (${pct(sp.ret)}, caída máx. ${pct(sp.dd)})${bRisk ? `, y ${bRisk} lo logran sin caer más que él` : ''}.</b> ${ptUni === 'ix' ? `QQQ rindió ${pct(qq && qq.ret)} con caída de ${pct(qq && qq.dd)}; los índices en igual peso, ${pct(ew.ret)}.` : `La cartera de igual peso rindió ${pct(ew.ret)} (caída ${pct(ew.dd)}) y ${bEw} estrategias la superan. El mejor activo fue ${esc(bestBh[0])} con ${pct(bestBh[1])}.`}</p>
+    <p class="note" style="margin-bottom:10px"><b>${nBest ? `${nBest} de las 10 rinden más que el mejor índice, ${esc(name(best.t))} (${pct(best.ret)}, caída máx. ${pct(best.dd)})${nSafe ? `, y ${nSafe} lo logran sin caer más que él` : ''}.` : `Ninguna rinde más que el mejor índice, ${esc(name(best.t))} (${pct(best.ret)}, caída máx. ${pct(best.dd)}).`}</b> La primera rindió ${pct(top[0].ret)} con caída de ${pct(top[0].dd)}.</p>
     ${ptUni === 'all' ? `<p class="note" style="margin-bottom:10px;border-left:3px solid var(--down);padding-left:8px"><b>Sesgo de selección.</b> Estos activos se eligieron hoy, sabiendo cuáles subieron (AXTI, SNDK, MU…). Una rotación que compra "los que más subieron" en esta lista hereda ese sesgo y por eso muestra retornos de miles por ciento que no se podían conseguir en tiempo real. La vista "Solo índices" evita el problema.</p>` : ''}
-    <div><p class="sub" style="margin:0 0 4px">Crecimiento de $100: <b>${esc(sel.name)}</b> frente a S&P 500${ptUni === 'ix' ? ' y QQQ' : ''} e igual peso. Toca una fila para cambiarla. Escala logarítmica.</p><div class="chart" id="pc"></div><div class="legend" id="pleg"></div></div>
-    <div class="tablebox" style="margin-top:12px"><table><thead><tr><th>#</th><th style="text-align:left">Estrategia</th><th>Retorno</th><th>Anual</th><th>Caída máx.</th><th title="Retorno mensual promedio dividido por su volatilidad, anualizado">Sharpe</th><th title="Diferencia de capital final frente al S&P 500">vs S&P 500</th>${cur ? '<th style="text-align:left">Tendría este mes</th>' : ''}</tr></thead><tbody>
-    ${[{ k: '_sp', name: 'Comprar y mantener S&P 500', group: 'Referencia', ...sp, now: ['SP500'] }].concat(ptUni === 'ix' && qq ? [{ k: '_qq', name: 'Comprar y mantener QQQ', group: 'Referencia', ...qq, now: ['QQQ'] }] : [], rows).sort((a, b) => b.ret - a.ret).map((r, i) => {
-      const ref = r.k[0] === '_' || r === ew;
-      return `<tr data-k="${r.k}" style="${r.k === ptSel ? 'background:var(--hover,rgba(127,127,127,.12))' : ''}${ref ? ';font-weight:600' : ''}"><td class="num muted">${i + 1}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(r.name)}<span class="rb">${esc(r.group)}</span></td>
+    <div><p class="sub" style="margin:0 0 4px">Crecimiento de $100: <b>${esc(sel.name)}</b> frente a comprar y mantener los índices. Toca una fila para cambiarla. Escala logarítmica.</p><div class="chart" id="pc"></div><div class="legend" id="pleg"></div></div>
+    <div class="tablebox" style="margin-top:12px"><table><thead><tr><th>#</th><th style="text-align:left">Cartera</th><th>Retorno</th><th>Anual</th><th>Caída máx.</th><th title="Retorno mensual promedio dividido por su volatilidad, anualizado">Sharpe</th><th title="Diferencia de capital final frente a comprar y mantener QQQ">vs QQQ</th><th title="Diferencia de capital final frente a comprar y mantener el S&P 500">vs S&P 500</th>${cur ? '<th style="text-align:left">Tendría este mes</th>' : ''}</tr></thead><tbody>
+    ${idx.concat(top).sort((a, b) => b.ret - a.ret).map(r => {
+      const ref = r.k[0] === '_', n = ref ? '' : top.indexOf(r) + 1;
+      return `<tr data-k="${r.k}" style="${r.k === ptSel ? 'background:var(--hover,rgba(127,127,127,.12))' : ''}${ref ? ';font-weight:600;cursor:default' : ''}"><td class="num muted">${n}</td><td style="text-align:left;white-space:normal;min-width:220px">${esc(r.name)}<span class="rb">${esc(r.group)}</span></td>
       <td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.cagr)}">${pct(r.cagr)}</td><td class="num">${pct(r.dd)}</td><td class="num">${r.sharpe == null ? '–' : fmt(r.sharpe, 2)}</td>
-      <td class="num ${cls((1 + r.ret) / (1 + sp.ret) - 1)}">${r.k === '_sp' ? '–' : pct((1 + r.ret) / (1 + sp.ret) - 1)}</td>${cur ? `<td style="text-align:left;white-space:normal">${r.now && r.now.length ? r.now.map(name).map(esc).join(', ') : '<span class="muted">Efectivo</span>'}</td>` : ''}</tr>` }).join('')}
+      <td class="num ${r.k === '_QQQ' ? 'muted' : vc(r, qq)}">${r.k === '_QQQ' ? '–' : vs(r, qq)}</td><td class="num ${r.k === '_SP500' ? 'muted' : vc(r, sp)}">${r.k === '_SP500' ? '–' : vs(r, sp)}</td>${cur ? `<td style="text-align:left;white-space:normal">${r.now && r.now.length ? r.now.map(name).map(esc).join(', ') : '<span class="muted">Efectivo</span>'}</td>` : ''}</tr>` }).join('')}
     </tbody></table></div>
     <p class="note"><b>Qué hace cada una.</b> <b>Rotación</b>: a fin de mes compra en partes iguales los N activos con mejor retorno de los últimos meses y vende el resto. "+ solo si 12 meses > 0" deja en efectivo los elegidos que vienen cayendo en el año (momentum absoluto). "+ S&P 500 sobre su media de 10 meses" pasa todo a efectivo cuando el mercado está en tendencia bajista (filtro de régimen). <b>Momentum dual</b> (Antonacci): todo en el mejor de S&P 500, Nasdaq y ACWI a 12 meses, o efectivo si ese retorno es negativo. <b>Faber</b>: cada activo pesa lo mismo y solo se mantiene si cerró el mes sobre su media de 10 meses. La columna "Tendría este mes" es lo que la regla indica comprar con el último cierre mensual. El efectivo no rinde interés en el cálculo, lo que perjudica un poco a las estrategias que salen del mercado.</p>
-    <p class="note"><b>Cuidado con el sobreajuste.</b> Se prueban muchas variantes sobre los mismos datos; la primera de la tabla en parte tuvo suerte. Pesa más la que gana en varios plazos. Resultados pasados no garantizan resultados futuros.</p></section>`;
+    <p class="note"><b>Cuidado con el sobreajuste.</b> Las 10 se eligen mirando el resultado, así que en parte tuvieron suerte. Pesa más la que aparece arriba en varios plazos. Resultados pasados no garantizan resultados futuros.</p></section>`;
   const ch = mk(view.querySelector('#pc'), { rightPriceScale: { mode: 1 } }), T = W.months.map(m => m + '-28');
-  const ser = [[sel.name, sel.eq, css('--accent'), 2.5], ['S&P 500', sp.eq, '#d0661b', 1.5], [ew.name, ew.eq, '#888', 1.5]].concat(ptUni === 'ix' && qq ? [['QQQ', qq.eq, '#2a9bb0', 1.5]] : []);
+  const ser = [[sel.name, sel.eq, css('--accent'), 2.5]].concat(idx.map(r => [PT_NAMES[r.t] || r.t, r.eq, r.c, 1.5]));
   ser.forEach(([n, eq, c, w]) => { const s = ch.addLineSeries({ color: c, lineWidth: w, priceLineVisible: false, lastValueVisible: false }); s.setData(eq.map((v, i) => ({ time: T[i], value: v * 100 }))) });
   ch.timeScale().fitContent();
   view.querySelector('#pleg').innerHTML = ser.map(([n, , c]) => `<span><i style="background:${c}"></i>${esc(n)}</span>`).join('');
@@ -1167,15 +799,15 @@ let bzFilter = 'all';
 function seenKeys() { try { return new Set(JSON.parse(localStorage.getItem('buzonSeen') || '[]')) } catch (e) { return new Set() } }
 function saveSeen(s) { try { localStorage.setItem('buzonSeen', JSON.stringify([...s].slice(-3000))) } catch (e) { } }
 function unreadCount() { const s = seenKeys(); return LOG.filter(a => !s.has(a.key)).length }
-const SRC = { momentum: 'Momentum top 10', ichimoku: 'Ichimoku', medias: 'EMA 9/18 vs SMA 30' };
+const SRC = { momentum: 'Momentum top 10' };
 function renderBuzon(view) {
   const seen = seenKeys();
   const L = LOG.filter(a => bzFilter === 'all' || (bzFilter === 'buy' || bzFilter === 'sell' ? a.a === bzFilter : a.src === bzFilter)).slice().sort((a, b) => b.d.localeCompare(a.d) || a.t.localeCompare(b.t));
   const days = [...new Set(L.map(a => a.d))];
   const nU = LOG.filter(a => !seen.has(a.key)).length;
-  view.innerHTML = `<section class="panel"><div class="row"><div><h2>Buzón de alertas</h2><p class="sub">Todas las señales de compra y venta, de la más nueva a la más antigua: la estrategia momentum y las de Ichimoku y medias de cada activo. Se registran al cierre y también llegan por correo. ${nU ? `<b>${nU} sin leer.</b>` : 'Todo leído.'}</p></div>
+  view.innerHTML = `<section class="panel"><div class="row"><div><h2>Buzón de alertas</h2><p class="sub">Las compras y ventas de la estrategia que replica la <a href="#paper">Simulación</a> en Alpaca paper (las 10 acciones más fuertes con filtro de mercado), de la más nueva a la más antigua. Se registran al cierre, también llegan por correo y la cuenta las ejecuta en la apertura siguiente. ${nU ? `<b>${nU} sin leer.</b>` : 'Todo leído.'}</p></div>
     <span style="display:flex;gap:6px;flex-wrap:wrap">${'Notification' in window ? `<button class="btn" id="bzn">${Notification.permission === 'granted' ? 'Avisos del navegador activados' : 'Avisarme en este navegador'}</button>` : ''}<button class="btn" id="bzr" ${nU ? '' : 'disabled'}>Marcar todo como leído</button></span></div>
-    <div class="lab-top"><span class="seg" id="bzf" style="flex-wrap:wrap">${[['all', 'Todas'], ['buy', 'Compras'], ['sell', 'Ventas'], ['momentum', 'Momentum'], ['ichimoku', 'Ichimoku'], ['medias', 'Medias']].map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === bzFilter}">${l}</button>`).join('')}</span></div>
+    <div class="lab-top"><span class="seg" id="bzf" style="flex-wrap:wrap">${[['all', 'Todas'], ['buy', 'Compras'], ['sell', 'Ventas']].map(([k, l]) => `<button data-v="${k}" aria-pressed="${k === bzFilter}">${l}</button>`).join('')}</span></div>
     ${days.length ? days.map(d => `<h3 style="margin:14px 0 6px">${fdate(d)}</h3><div class="alerts">${L.filter(a => a.d === d).map(a => `<a class="alert ${a.a === 'buy' ? 'a-buy' : 'a-sell'}" data-key="${esc(a.key)}" href="${a.src === 'momentum' ? '#momentum' : tkLink(a.t)}" style="min-width:180px${seen.has(a.key) ? ';opacity:.75' : ''}"><span style="font-size:1.15rem"><b>${esc(a.t)}</b> ${actPill(a.a)}${seen.has(a.key) ? '' : ' <span class="sig sig-long" style="padding:0 5px">Nueva</span>'}</span><span class="rb">${esc(SRC[a.src] || a.src)} · ${esc(a.txt)}</span></a>`).join('')}</div>`).join('') : '<p class="muted">No hay alertas con este filtro.</p>'}
     </section>`;
   view.querySelector('#bzf').onclick = e => { const b = e.target.closest('button'); if (!b) return; bzFilter = b.dataset.v; renderBuzon(view) };
@@ -1186,14 +818,14 @@ function renderBuzon(view) {
 }
 async function loadLog() {
   const prev = new Set(LOG.map(a => a.key)), first = !LOG.length;
-  try { LOG = await getJSON('data/alerts_log.json') } catch (e) { return }
+  try { LOG = (await getJSON('data/alerts_log.json')).filter(a => a.src === 'momentum') } catch (e) { return }
   try { if (!first && 'Notification' in window && Notification.permission === 'granted') for (const a of LOG) if (!prev.has(a.key)) new Notification(`${a.t}: ${a.a === 'buy' ? 'COMPRA' : 'VENTA'}`, { body: `${SRC[a.src] || a.src}. ${a.txt}` }) } catch (e) { }
 }
 
 let rerender=()=>{},curRoute=null;
-function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||h==='senales'||h==='lab'||h==='ranking'||h==='carteras'||h==='momentum'||h==='paper'||h==='buzon'?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
+function route(){const h=location.hash.replace('#','').split('?')[0];const t=ORDER.includes(h)||MENU.some(m=>m[0]===h)?h:'resumen';curRoute=t;renderNav(t);clearCharts();const v=document.getElementById('view');
   document.getElementById('asof').textContent='al '+fdate(ORDER.map(x=>M[x].lastDate).sort().pop());
-  if(t==='resumen')renderSummary(v);else if(t==='senales')renderSignals(v);else if(t==='lab')renderLab(v);else if(t==='ranking')renderRanking(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='paper')renderPaper(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
+  if(t==='resumen')renderSummary(v);else if(t==='analisis')renderTA(v);else if(t==='carteras')renderCarteras(v);else if(t==='momentum')renderMomentum(v);else if(t==='paper')renderPaper(v);else if(t==='buzon')renderBuzon(v);else renderAsset(v,t)}
 window.addEventListener('hashchange',()=>{route();window.scrollTo(0,0)});
 const rerun=()=>{try{rerender()}catch(e){}};
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',rerun)}catch(e){}
@@ -1205,7 +837,7 @@ function setOrder(){const has=t=>SUM.tickers[t]&&SUM.tickers[t].closes&&SUM.tick
 async function load(){
   try{SUM=await getJSON('data/summary.json')}catch(e){setStatus('bad','Aún no hay datos. En GitHub, abre la pestaña Actions y ejecuta "Actualizar datos".');document.getElementById('view').innerHTML='<p class="empty">Sin datos todavía.</p>';return false}
   setOrder();computeMetrics();freshness();SIG=await getJSON('data/signals.json').catch(()=>null);await loadLog();return true}
-async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){const prevA=newAlerts();SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];notifyNew(prevA);SUM=s;setOrder();for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
+async function refresh(){const before=SUM&&SUM.updated;try{const s=await getJSON('data/summary.json');if(s.updated!==before){SIG=await getJSON('data/signals.json').catch(()=>SIG);await loadLog();MOM=null;PORT=null;for(const k in cacheS)delete cacheS[k];SUM=s;setOrder();for(const k in cacheT)delete cacheT[k];for(const k in cacheI)delete cacheI[k];computeMetrics();const y=window.scrollY;route();window.scrollTo(0,y)}freshness()}catch(e){}}
 if(!window.LightweightCharts){document.getElementById('view').innerHTML='<p class="empty">No se pudo cargar la librería de gráficos. Recarga la página.</p>';return}
 getJSON('data/planilla.json').then(p=>{PLAN=p}).catch(()=>{}).finally(async()=>{if(await load())route();setInterval(refresh,120000)});
 })();

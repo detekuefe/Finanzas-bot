@@ -17,13 +17,13 @@ siguiente. Costo de 0,05% por cada compra o venta.
 Genera:
 - data/signals.json        estado de cada estrategia por activo y resumen del backtest
 - data/strat/<TICKER>.json series para graficar (líneas, nube, operaciones, capital)
-- alertas.md               (fuera de data/) aviso de señales nuevas al cierre, que la acción
-                           de GitHub publica como issue para que llegue por correo
+
+Estas señales ya no generan alertas: el buzón y los correos son solo de la estrategia momentum
+que replica la simulación (scripts/momentum.py).
 """
 import json
 import os
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, timedelta
 
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 COST = 0.0005
@@ -265,49 +265,6 @@ def main():
     with open(os.path.join(DATA, "signals.json"), "w") as f:
         json.dump(out, f, separators=(",", ":"))
     print(f"Estrategias calculadas para {len(out['tickers'])} activos")
-    write_alerts(out)
-
-
-def write_alerts(out):
-    """Al cierre (desde las 16:15 de Nueva York) avisa una sola vez cada señal nueva."""
-    now = datetime.now(ZoneInfo("America/New_York"))
-    if now.weekday() >= 5 or (now.hour, now.minute) < (16, 15):
-        return
-    sent_path = os.path.join(DATA, "alerts_sent.json")
-    try:
-        with open(sent_path) as f:
-            sent = json.load(f)
-    except (OSError, ValueError):
-        sent = []
-    names = {"ichimoku": "Ichimoku", "medias": "EMA 9/18 vs SMA 30"}
-    log_path = os.path.join(DATA, "alerts_log.json")
-    try:
-        with open(log_path) as f:
-            log = json.load(f)
-    except (OSError, ValueError):
-        log = []
-    lines = []
-    for t, v in out["tickers"].items():
-        for k in ("ichimoku", "medias"):
-            st = v[k]["state"]
-            if st["code"] not in ("buy_new", "sell_new"):
-                continue
-            key = f"{st['date']}|{t}|{k}|{st['code']}"
-            if key in sent:
-                continue
-            sent.append(key)
-            accion = "COMPRA" if st["code"] == "buy_new" else "VENTA"
-            log.append({"key": key, "d": st["date"], "t": t, "src": k, "a": "buy" if st["code"] == "buy_new" else "sell",
-                        "txt": st["detail"]})
-            lines.append(f"- **{t}** · {names[k]}: **{accion}** en la próxima apertura. {st['detail']}.")
-    if not lines:
-        return
-    with open(sent_path, "w") as f:
-        json.dump(sent[-2000:], f)
-    with open(log_path, "w") as f:  # buzón de alertas de la app
-        json.dump(log[-3000:], f, separators=(",", ":"))
-    with open(os.path.join(DATA, "..", "alertas.md"), "w") as f:
-        f.write(f"Señales al cierre del {now.date().isoformat()}:\n\n" + "\n".join(lines) + "\n")
 
 
 if __name__ == "__main__":
