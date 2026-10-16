@@ -416,8 +416,8 @@ async function renderTA(view) {
   view.innerHTML = `<section class="panel"><div class="row"><h2>Análisis técnico</h2>
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><select id="tat" aria-label="Activo">${grp.map(([l, ts]) => `<optgroup label="${l}">${ts.map(t => `<option value="${t}" ${t === TA.t ? 'selected' : ''}>${t}${RUBRO[t] ? ' · ' + esc(RUBRO[t]) : ''}</option>`).join('')}</optgroup>`).join('')}</select>
     <span class="seg" id="tatf"><button data-v="d" aria-pressed="${TA.tf === 'd'}">Diario</button><button data-v="w" aria-pressed="${TA.tf === 'w'}">Semanal</button></span></div></div>
-    <div class="lab-top" style="margin-top:10px"><span class="seg" id="tatool"><button data-v="trend" aria-pressed="${taTool === 'trend'}">Línea de tendencia</button><button data-v="hline" aria-pressed="${taTool === 'hline'}">Línea horizontal</button></span>
-      <button class="btn" id="taundo">Borrar la última</button><button class="btn" id="taclr">Borrar todas</button>
+    <div class="lab-top" style="margin-top:10px"><span class="seg" id="tatool"><button data-v="trend" aria-pressed="${taTool === 'trend'}">Línea de tendencia</button><button data-v="hline" aria-pressed="${taTool === 'hline'}">Línea horizontal</button><button data-v="erase" aria-pressed="${taTool === 'erase'}">Borrar una línea</button></span>
+      <button class="btn" id="taundo">Borrar la última</button><button class="btn" id="taclr">Borrar todas</button><button class="lnk" id="taall">Limpiar todos los gráficos</button>
       <label class="muted" style="font-size:.85rem"><input type="checkbox" id="taext" ${TA.ext ? 'checked' : ''}> Extender tendencias hasta hoy</label></div>
     <p class="note" id="tahint" style="margin:6px 0"></p>
     <div class="chart" id="tac" style="height:480px"></div><div class="legend" id="taleg"></div>
@@ -431,9 +431,9 @@ async function renderTA(view) {
       <label>${sw(TA_COL.tenkan)}Tenkan ${num('ia', TA.ichi.a, 2, 200)}</label><label>${sw(TA_COL.kijun)}Kijun ${num('ib', TA.ichi.b, 2, 200)}</label>
       <label>${sw(TA_COL.spanB)}Senkou B ${num('ic', TA.ichi.c, 2, 300)}</label><label>Desplazamiento ${num('id', TA.ichi.d, 1, 100)}</label>
       <button class="lnk" id="tarst">Volver a los valores por defecto</button></div>
-    <p class="note"><b>Cómo dibujar.</b> Elige "Línea de tendencia" y toca dos velas en el gráfico; "Línea horizontal" pide un solo toque. Las líneas se guardan en este navegador para cada activo y temporalidad. <b>Indicadores.</b> SMA es la media simple de los cierres; EMA da más peso a los últimos. En Ichimoku, Senkou A (verde) es el promedio de Tenkan y Kijun y Senkou B (café) el punto medio de su período; ambas se proyectan hacia adelante formando la nube, y Chikou (gris punteado) es el cierre desplazado hacia atrás. Precios sin ajustar por dividendos, en dólares.</p></section>`;
+    <p class="note"><b>Cómo dibujar.</b> Elige "Línea de tendencia" y toca dos velas en el gráfico; "Línea horizontal" pide un solo toque. Para borrar, "Borrar una línea" y toca la línea; también puedes quitar la última, todas las de este gráfico o las de todos los activos. Las líneas se guardan en este navegador para cada activo y temporalidad. <b>Indicadores.</b> SMA es la media simple de los cierres; EMA da más peso a los últimos. En Ichimoku, Senkou A (verde) es el promedio de Tenkan y Kijun y Senkou B (café) el punto medio de su período; ambas se proyectan hacia adelante formando la nube, y Chikou (gris punteado) es el cierre desplazado hacia atrás. Precios sin ajustar por dividendos, en dólares.</p></section>`;
   const hint = view.querySelector('#tahint');
-  const setHint = () => { const n = (TAD[taKey()] || []).length; hint.textContent = taTool === 'trend' ? (taFirst ? 'Toca la segunda vela para terminar la línea.' : 'Toca la primera vela de la línea de tendencia.') : taTool === 'hline' ? 'Toca el precio donde va la línea horizontal.' : n ? `${n} línea${n > 1 ? 's' : ''} dibujada${n > 1 ? 's' : ''} en ${TA.t} ${TA.tf === 'd' ? 'diario' : 'semanal'}.` : 'Sin líneas dibujadas en este gráfico.' };
+  const setHint = () => { const n = (TAD[taKey()] || []).length; hint.textContent = taTool === 'trend' ? (taFirst ? 'Toca la segunda vela para terminar la línea.' : 'Toca la primera vela de la línea de tendencia.') : taTool === 'hline' ? 'Toca el precio donde va la línea horizontal.' : taTool === 'erase' ? 'Toca la línea que quieres borrar. Vuelve a tocar "Borrar una línea" para terminar.' : n ? `${n} línea${n > 1 ? 's' : ''} dibujada${n > 1 ? 's' : ''} en ${TA.t} ${TA.tf === 'd' ? 'diario' : 'semanal'}.` : 'Sin líneas dibujadas en este gráfico.' };
   let D;
   try { if (!cacheT[TA.t]) cacheT[TA.t] = await getJSON('data/' + TA.t + '.json'); D = cacheT[TA.t] } catch (e) { view.querySelector('#tac').innerHTML = '<p class="empty">No se pudieron leer los datos de ' + esc(TA.t) + '.</p>'; return }
   if (curRoute !== 'analisis') return;
@@ -465,15 +465,17 @@ async function renderTA(view) {
       leg.push([TA_COL.tenkan, `Tenkan ${a}`, lastOf(ten)], [TA_COL.kijun, `Kijun ${b}`, lastOf(kij)], [TA_COL.spanA, 'Senkou A', lastOf(fw(sA))], [TA_COL.spanB, `Senkou B ${cc}`, lastOf(fw(sB))], [TA_COL.chikou, `Chikou ${d}`, null]);
     }
     // Líneas dibujadas: tendencia entre dos velas (opcionalmente prolongada hasta la última) y horizontales
-    const acc = css('--accent'), L = TAD[taKey()] || [];
-    L.forEach(o => {
-      if (o.k === 'h') { cs.createPriceLine({ price: o.p, color: acc, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '' }); return }
+    // No entran en la escala automática, así una línea muy inclinada no aplasta las velas
+    const acc = css('--accent'), L = TAD[taKey()] || [], geo = [];
+    L.forEach((o, n) => {
+      if (o.k === 'h') { cs.createPriceLine({ price: o.p, color: acc, lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: '' }); geo.push({ n, h: o.p }); return }
       let [p, q] = [o.a, o.b].sort((x, y) => x[0].localeCompare(y[0])); const i1 = ix.get(p[0]), i2 = ix.get(q[0]);
       if (i1 == null || i2 == null) return;
       const pts = [{ time: p[0], value: p[1] }, { time: q[0], value: q[1] }];
       if (TA.ext && i2 > i1 && i2 < N - 1) pts.push({ time: T[N - 1], value: p[1] + (q[1] - p[1]) * (N - 1 - i1) / (i2 - i1) });
       if (i1 === i2) return;
-      const s = ch.addLineSeries({ color: acc, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false }); s.setData(pts);
+      const s = ch.addLineSeries({ color: acc, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null }); s.setData(pts);
+      geo.push({ n, a: pts[0], b: pts[pts.length - 1] });
     });
     if (taFirst) cs.setMarkers([{ time: taFirst[0], position: 'aboveBar', shape: 'circle', color: acc }]);
     const lc = c[N - 1];
@@ -481,7 +483,19 @@ async function renderTA(view) {
     if (keep) ch.timeScale().setVisibleLogicalRange(keep); else { const show = Math.min(N, TA.tf === 'd' ? 130 : 160, Math.max(40, Math.round(el.clientWidth / 7))); ch.timeScale().setVisibleLogicalRange({ from: N - show, to: N + (TA.ichi.on ? TA.ichi.d : 3) }) }
     ch.subscribeClick(e => {
       if (!taTool || !e.point) return; const pr = cs.coordinateToPrice(e.point.y); if (pr == null) return;
-      if (taTool === 'hline') { (TAD[taKey()] = TAD[taKey()] || []).push({ k: 'h', p: +pr.toFixed(4) }); taTool = null }
+      if (taTool === 'erase') {
+        // La línea más cercana al toque, a menos de 14 píxeles
+        const X = e.point.x, Y = e.point.y, ts = ch.timeScale(); let best = null, bd = 14;
+        geo.forEach(g => {
+          let dd;
+          if (g.h != null) { const y = cs.priceToCoordinate(g.h); dd = y == null ? Infinity : Math.abs(y - Y) }
+          else { const x1 = ts.timeToCoordinate(g.a.time), y1 = cs.priceToCoordinate(g.a.value), x2 = ts.timeToCoordinate(g.b.time), y2 = cs.priceToCoordinate(g.b.value); if (x1 == null || x2 == null || y1 == null || y2 == null) return;
+            const dx = x2 - x1, dy = y2 - y1, k = Math.max(0, Math.min(1, ((X - x1) * dx + (Y - y1) * dy) / (dx * dx + dy * dy || 1))); dd = Math.hypot(X - x1 - k * dx, Y - y1 - k * dy) }
+          if (dd < bd) { bd = dd; best = g } });
+        if (!best) return;
+        TAD[taKey()].splice(best.n, 1); if (!TAD[taKey()].length) { delete TAD[taKey()]; taTool = null }
+      }
+      else if (taTool === 'hline') { (TAD[taKey()] = TAD[taKey()] || []).push({ k: 'h', p: +pr.toFixed(4) }); taTool = null }
       else { const t = taTime(e.time); if (!t || !ix.has(t)) return; if (!taFirst) taFirst = [t, +pr.toFixed(4)]; else { if (t !== taFirst[0]) (TAD[taKey()] = TAD[taKey()] || []).push({ k: 't', a: taFirst, b: [t, +pr.toFixed(4)] }); taFirst = null; taTool = null } }
       taSave(); syncTools(); setHint(); draw();
     });
@@ -492,7 +506,8 @@ async function renderTA(view) {
   view.querySelector('#tatf').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.v === TA.tf) return; TA.tf = b.dataset.v; taSave(); view.querySelectorAll('#tatf button').forEach(x => x.setAttribute('aria-pressed', x === b)); fresh() };
   view.querySelector('#tatool').onclick = e => { const b = e.target.closest('button'); if (!b) return; taTool = taTool === b.dataset.v ? null : b.dataset.v; taFirst = null; syncTools(); setHint(); draw() };
   view.querySelector('#taundo').onclick = () => { const L = TAD[taKey()]; if (L && L.length) L.pop(); taFirst = null; taSave(); setHint(); draw() };
-  view.querySelector('#taclr').onclick = () => { delete TAD[taKey()]; taFirst = null; taSave(); setHint(); draw() };
+  view.querySelector('#taclr').onclick = () => { delete TAD[taKey()]; taFirst = null; if (taTool === 'erase') taTool = null; taSave(); syncTools(); setHint(); draw() };
+  view.querySelector('#taall').onclick = () => { TAD = {}; taFirst = null; if (taTool === 'erase') taTool = null; taSave(); syncTools(); setHint(); draw() };
   view.querySelector('#taext').onchange = e => { TA.ext = e.target.checked ? 1 : 0; taSave(); draw() };
   view.querySelector('#tarst').onclick = () => { const d = taDefault(); TA.sma = d.sma; TA.ema = d.ema; TA.ichi = d.ichi; taSave(); renderTA(view) };
   view.querySelectorAll('input[type=checkbox][data-k]').forEach(cb => cb.onchange = () => { const k = cb.dataset.k; if (k === 'ichi') TA.ichi.on = cb.checked ? 1 : 0; else TA[k][+cb.dataset.i].on = cb.checked ? 1 : 0; taSave(); draw() });
