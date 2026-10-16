@@ -23,9 +23,9 @@ REFS = ["SPY", "QQQ"]
 DATA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 
 
-def main():
+def main(period="4y", out_name="universe.json"):
     tickers = list(dict.fromkeys(REFS + NASDAQ100 + SP500))
-    df = yf.download(tickers, period="4y", interval="1d", auto_adjust=True, progress=False, threads=True)
+    df = yf.download(tickers, period=period, interval="1d", auto_adjust=True, progress=False, threads=True)
     close = df["Close"].dropna(how="all")
     dates = [d.strftime("%Y-%m-%d") for d in close.index]
     out = {"dates": dates, "nasdaq100": [], "sp500": [], "closes": {}}
@@ -42,10 +42,11 @@ def main():
             out["sp500"].append(t)
     if len(out["closes"]) < len(tickers) * 0.8:
         sys.exit(f"Solo llegaron {len(out['closes'])} de {len(tickers)} activos; no se sobrescribe el archivo")
-    with open(os.path.join(DATA, "universe.json"), "w") as f:
+    with open(os.path.join(DATA, out_name), "w") as f:
         json.dump(out, f, separators=(",", ":"))
     print(f"Universo: {len(out['closes'])} activos, {len(dates)} días")
 
 
 if __name__ == "__main__":
-    main()
+    # uso: python scripts/fetch_universe.py [periodo archivo], p. ej. "10y universe_long.json" para estudios largos
+    main(*sys.argv[1:3])
