@@ -626,6 +626,43 @@ async function paperGrowthIntra(view, H, O, h0) {
   ch.timeScale().fitContent();
   leg.innerHTML = ser.map(([n, d, c]) => `<span><i style="background:${c}"></i>${esc(n)} ${pct(d[d.length - 1][1] / 100 - 1)}</span>`).join('') + '<span class="muted">Hora de Chile, solo horario regular de Nueva York.</span>';
 }
+// Entradas: cada compra ejecutada se cierra con las ventas siguientes del mismo activo (primero la más antigua).
+// Una venta parcial reparte la entrada. Las que siguen abiertas se valorizan al precio actual de Alpaca.
+async function paperEntries(view, O, P) {
+  const box = view.querySelector('#pent'); if (!box) return;
+  const tks = [...new Set(O.map(o => o.t.replace('.', '-')))].concat('QQQ');
+  await Promise.all([cacheT.QQQ ? null : getJSON('data/QQQ.json').then(d => { cacheT.QQQ = d }).catch(() => { })].concat(tks.map(t => cacheI[t] ? null : getJSON('data/intra/' + t + '.json').then(d => { cacheI[t] = d }).catch(() => { cacheI[t] = { days: {} } }))));
+  if (!view.contains(box)) return;
+  const qo = {}; ((cacheT.QQQ && cacheT.QQQ.daily) || []).forEach(r => { qo[r[0].slice(0, 10)] = r[1] });
+  // QQQ en el momento de cada ejecución: la primera vela de 5 minutos de la acción que contiene el precio ejecutado,
+  // y el precio de QQQ en esa misma vela. Si no hay velas de ese día, la apertura de QQQ.
+  const reg = bs => (bs || []).filter(b => { const m = nyMin(b[0]); return m >= 570 && m < 960 });
+  const qAt = (t, d, px) => { const bs = reg(((cacheI[t.replace('.', '-')] || {}).days || {})[d]), Q = reg(((cacheI.QQQ || {}).days || {})[d]);
+    const b = bs.find(b => b[3] <= px && px <= b[2]); if (b && Q.length) { const q = Q.find(x => x[0] === b[0]) || Q.filter(x => x[0] <= b[0]).pop(); if (q) return (q[1] + q[4]) / 2 }
+    return qo[d] ?? null };
+  const QS = SUM && SUM.tickers.QQQ, qNow = QS ? (QS.lastBar ? QS.lastBar[4] : QS.closes[QS.closes.length - 1][1]) : null;
+  const F = O.filter(o => (o.status === 'filled' || o.status === 'partially_filled') && o.qty && o.price).map(o => ({ t: o.t, d: (o.filled || o.d).slice(0, 10), side: o.side, q: +o.qty, px: +o.price }))
+    .sort((a, b) => a.d.localeCompare(b.d) || (a.side === 'sell' ? -1 : 1) - (b.side === 'sell' ? -1 : 1));
+  const open = {}, rows = [];
+  for (const f of F) {
+    if (f.side === 'buy') { (open[f.t] = open[f.t] || []).push({ t: f.t, d: f.d, q: f.q, px: f.px }); continue }
+    let left = f.q; const L = open[f.t] || [];
+    while (left > 1e-9 && L.length) { const l = L[0], q = Math.min(l.q, left); rows.push({ t: f.t, d: l.d, q, px: l.px, d2: f.d, px2: f.px }); l.q -= q; left -= q; if (l.q <= 1e-9) L.shift() }
+  }
+  const now = Object.fromEntries(P.map(p => [p.t, p.price]));
+  Object.values(open).flat().filter(l => l.q > 1e-9).forEach(l => rows.push({ t: l.t, d: l.d, q: l.q, px: l.px, d2: null, px2: now[l.t] ?? null }));
+  rows.forEach(r => { r.ret = r.px2 != null ? r.px2 / r.px - 1 : null; r.usd = r.px2 != null ? r.q * (r.px2 - r.px) : null;
+    const a = qAt(r.t, r.d, r.px), b = r.d2 ? qAt(r.t, r.d2, r.px2) : qNow; r.qqq = a && b ? b / a - 1 : null; r.vs = r.ret != null && r.qqq != null ? r.ret - r.qqq : null });
+  rows.sort((a, b) => (b.d2 || '9') .localeCompare(a.d2 || '9') || b.d.localeCompare(a.d) || a.t.localeCompare(b.t));
+  if (!rows.length) { box.innerHTML = '<p class="muted" style="margin:0">Todavía no hay compras ejecutadas.</p>'; return }
+  const done = rows.filter(r => r.vs != null), win = done.filter(r => r.vs > 0).length;
+  const tot = (k) => rows.reduce((a, r) => a + (r[k] || 0), 0), cost = rows.reduce((a, r) => a + r.q * r.px, 0), wq = rows.reduce((a, r) => a + (r.qqq != null ? r.q * r.px * r.qqq : 0), 0);
+  box.innerHTML = `<p class="note" style="margin:0 0 8px"><b>${win} de ${done.length} entradas le ganaron a QQQ en su mismo período.</b> En total ganaron ${fmt(tot('usd'))} US$ (${pct(tot('usd') / cost)} sobre lo invertido en cada una); el mismo dinero en QQQ habría dado ${pct(wq / cost)}.</p>
+    <div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Compra</th><th>Precio</th><th>Venta</th><th>Precio</th><th>Resultado</th><th>US$</th><th>QQQ</th><th title="Resultado de la acción menos el de QQQ en el mismo período, en puntos">vs QQQ</th></tr></thead><tbody>
+    ${rows.map(r => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(r.t.replace('.', '-'))}"><span class="tk">${esc(r.t)}</span></a></td><td class="num">${fdate(r.d)}</td><td class="num">${fmt(r.px)}</td><td class="num">${r.d2 ? fdate(r.d2) : '<span class="sig sig-long">Abierta</span>'}</td><td class="num">${fmt(r.px2)}</td>
+      <td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.usd)}">${fmt(r.usd)}</td><td class="num ${cls(r.qqq)}">${pct(r.qqq)}</td><td class="num ${cls(r.vs)}">${r.vs == null ? '–' : (r.vs > 0 ? '+' : '') + fmt(r.vs * 100, 2) + ' pts'}</td></tr>`).join('')}
+    </tbody></table></div>`;
+}
 async function paperIntra(view, P) {
   const box = view.querySelector('#pibox'); if (!box) return;
   const syms = P.map(p => p.t.replace('.', '-'));
@@ -690,7 +727,7 @@ async function renderPaper(view) {
   // el historial solo suma un punto por cierre, así que durante el día quedaría desfasado.
   const live = t => { const T = SUM && SUM.tickers[t]; if (!T || !h0.d) return null; const b = fxAt(T.closes, h0.d), n = T.lastBar ? T.lastBar[4] : T.closes[T.closes.length - 1][1]; return b ? n / b - 1 : null };
   const dayR = PAP.last_equity ? eq / PAP.last_equity - 1 : null;
-  const spyR = live('SP500') ?? (h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null), qqqR = live('QQQ') ?? (h0.qqq && hl.qqq ? hl.qqq / h0.qqq - 1 : null), vsQ = ret != null && qqqR != null ? (1 + ret) / (1 + qqqR) - 1 : null, modR = H.length > 1 && h0.model && hl.model ? hl.model / h0.model - 1 : null;
+  const spyR = live('SP500') ?? (h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null), qqqR = live('QQQ') ?? (h0.qqq && hl.qqq ? hl.qqq / h0.qqq - 1 : null), vsQ = ret != null && qqqR != null ? (1 + ret) / (1 + qqqR) - 1 : null;
   const P = (PAP.positions || []).slice().sort((a, b) => b.value - a.value), O = PAP.orders || [], E = PAP.errors || [];
   const invested = P.reduce((a, p) => a + p.value, 0), pl = P.reduce((a, p) => a + p.pl, 0);
   view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
@@ -709,7 +746,6 @@ async function renderPaper(view) {
       <div class="stat"><b>Nasdaq-100 (QQQ), referencia</b><span class="num ${cls(qqqR)}">${pct(qqqR)}</span></div>
       <div class="stat"><b>Cuenta vs QQQ</b><span class="num ${cls(vsQ)}">${pct(vsQ)}</span></div>
       <div class="stat"><b>S&P 500 en el mismo periodo</b><span class="num ${cls(spyR)}">${pct(spyR)}</span></div>
-      <div class="stat"><b>Regla en el backtest</b><span class="num ${cls(modR)}">${modR == null ? '<span class="muted" style="font-size:.8rem">desde el 2.º cierre</span>' : pct(modR)}</span></div>
       <div class="stat"><b>Invertido · efectivo</b><span class="num">${fmt(invested, 0)} · ${fmt(PAP.cash, 0)}</span></div>
     </div>
     ${E.length ? `<div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(--down)"><b>Órdenes con error el ${fdate(E[0].d)}:</b> ${E.map(e => esc(e.t)).join(', ')}.</div>` : ''}
@@ -723,6 +759,7 @@ async function renderPaper(view) {
   <section class="panel"><h2>Posiciones</h2><p class="sub">"Hoy" es la variación desde el cierre de ayer, igual que "Día" en el Resumen. "Ganancia" y "%" se miden desde el precio de compra, así que pueden tener distinto signo: si una acción abrió con caída y se compró ahí, hoy puede ir en rojo y la posición en verde.</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th title="Variación desde el cierre de ayer">Hoy</th><th title="Desde el precio de compra">Ganancia</th><th title="Desde el precio de compra">%</th></tr></thead><tbody>
     ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.day)}">${pct(p.day)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td></td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="8" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
     </tbody></table></div></section>
+  <section class="panel"><h2>Resultado de cada entrada</h2><p class="sub">Cada compra hasta su venta (o hasta hoy si sigue abierta), frente a comprar QQQ en los mismos días. QQQ se toma en la misma vela de 5 minutos en que se ejecutó cada compra y cada venta (las de la regla van en la apertura; las ventas manuales, a la hora en que se pidieron).</p><div id="pent"><p class="muted" style="margin:0">Calculando…</p></div></section>
   <section class="panel"><h2>Órdenes en curso</h2>${ordTable(O.filter(o => ORD_OPEN.includes(o.status)), 'Sin órdenes en curso.')}</section>
   <section class="panel"><details><summary style="cursor:pointer"><h2 style="display:inline">Historial de movimientos</h2> <span class="muted">(${O.filter(o => !ORD_OPEN.includes(o.status)).length})</span></summary>
     <p class="muted">Compras y ventas ejecutadas, y órdenes canceladas o vencidas (atenuadas).</p>
@@ -751,6 +788,7 @@ async function renderPaper(view) {
     view.querySelector('#pgm').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.v === pgMode) return; pgMode = b.dataset.v; try { localStorage.setItem('pgMode', pgMode) } catch (_) { } view.querySelectorAll('#pgm button').forEach(x => x.setAttribute('aria-pressed', x === b)); growth() };
   }
   paperIntra(view, P);
+  paperEntries(view, O, P);
   rerender = () => { };
 }
 function otherIncome() { try { return +localStorage.getItem('otrosIngresos') || 0 } catch (e) { return 0 } }
