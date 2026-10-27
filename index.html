@@ -628,7 +628,7 @@ async function paperGrowthIntra(view, H, O, h0) {
 }
 // Entradas: cada compra ejecutada se cierra con las ventas siguientes del mismo activo (primero la más antigua).
 // Una venta parcial reparte la entrada. Las que siguen abiertas se valorizan al precio actual de Alpaca.
-async function paperEntries(view, O, P) {
+async function paperEntries(view, O, P, T) {
   const box = view.querySelector('#pent'); if (!box) return;
   const tks = [...new Set(O.map(o => o.t.replace('.', '-')))].concat('QQQ');
   await Promise.all([cacheT.QQQ ? null : getJSON('data/QQQ.json').then(d => { cacheT.QQQ = d }).catch(() => { })].concat(tks.map(t => cacheI[t] ? null : getJSON('data/intra/' + t + '.json').then(d => { cacheI[t] = d }).catch(() => { cacheI[t] = { days: {} } }))));
@@ -663,15 +663,15 @@ async function paperEntries(view, O, P) {
     .sort((a, b) => (b.d2 || '9').localeCompare(a.d2 || '9') || b.d.localeCompare(a.d));
   const done = E.filter(e => e.vs != null), win = done.filter(e => e.vs > 0).length;
   let acc = 1, accQ = 1; [...E].reverse().forEach(e => { if (e.ret != null) acc *= 1 + e.ret; if (e.qqq != null) accQ *= 1 + e.qqq });
-  const usdT = E.reduce((a, e) => a + (e.usd || 0), 0);
+  const vsT = T.ret != null && T.qqqR != null ? T.ret - T.qqqR : null;
   const vs = v => v == null ? '–' : (v > 0 ? '+' : '') + fmt(v * 100, 2) + ' pts';
-  box.innerHTML = `<p class="note" style="margin:0 0 8px"><b>${win} de ${done.length} entradas le ganaron a QQQ.</b> Encadenadas, la cartera lleva ${pct(acc - 1)} y QQQ en los mismos tramos ${pct(accQ - 1)}. Toca una entrada para ver sus acciones.</p>
+  box.innerHTML = `<p class="note" style="margin:0 0 8px"><b>${win} de ${done.length} entradas le ganaron a QQQ.</b> Mientras estuvo invertida, la cartera hizo ${pct(acc - 1)} y QQQ en esos mismos tramos ${pct(accQ - 1)}. El acumulado de abajo es la cuenta completa contra QQQ en todo el período, incluidos los días en efectivo. Toca una entrada para ver sus acciones.</p>
     <div class="tablebox"><table><thead><tr><th style="text-align:left">Compra</th><th style="text-align:left">Venta</th><th>Acciones</th><th>Invertido</th><th>Resultado</th><th>US$</th><th>QQQ</th><th title="Resultado de la cartera menos el de QQQ en el mismo período, en puntos">vs QQQ</th></tr></thead><tbody>
     ${E.map((e, i) => `<tr data-e="${i}"><td style="text-align:left">${fdate(e.d)}</td><td style="text-align:left">${e.d2 ? fdate(e.d2) : '<span class="sig sig-long">Abierta</span>'}</td><td class="num">${e.L.length}</td><td class="num">${fmt(e.cost, 0)}</td>
       <td class="num ${cls(e.ret)}"><b>${pct(e.ret)}</b></td><td class="num ${cls(e.usd)}">${fmt(e.usd)}</td><td class="num ${cls(e.qqq)}">${pct(e.qqq)}</td><td class="num ${cls(e.vs)}"><b>${vs(e.vs)}</b></td></tr>
       <tr class="ent-d" data-d="${i}" hidden><td colspan="8" style="padding:4px 0 10px"><table style="width:100%;font-size:.92em"><tbody>${e.L.map(r => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(r.t.replace('.', '-'))}"><span class="tk">${esc(r.t)}</span></a></td><td class="num">${fmt(r.px)} → ${fmt(r.px2)}</td><td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.usd)}">${fmt(r.usd)} US$</td><td class="num ${cls(r.vs)}">${vs(r.vs)}</td></tr>`).join('')}</tbody></table></td></tr>`).join('')}
-    </tbody><tfoot><tr style="cursor:default;border-top:2px solid var(--line)"><td style="text-align:left" colspan="3"><b>Acumulado desde el inicio</b></td><td class="num">${fmt(E[E.length - 1].cost, 0)}</td>
-      <td class="num ${cls(acc - 1)}"><b>${pct(acc - 1)}</b></td><td class="num ${cls(usdT)}">${fmt(usdT)}</td><td class="num ${cls(accQ - 1)}">${pct(accQ - 1)}</td><td class="num ${cls(acc - accQ)}"><b>${vs(acc - accQ)}</b></td></tr></tfoot></table></div>`;
+    </tbody><tfoot><tr style="cursor:default;border-top:2px solid var(--line)"><td style="text-align:left" colspan="3"><b>Acumulado desde el inicio</b></td><td class="num">${fmt(T.e0, 0)}</td>
+      <td class="num ${cls(T.ret)}"><b>${pct(T.ret)}</b></td><td class="num ${cls(T.eq - T.e0)}">${fmt(T.eq - T.e0)}</td><td class="num ${cls(T.qqqR)}">${pct(T.qqqR)}</td><td class="num ${cls(vsT)}"><b>${vs(vsT)}</b></td></tr></tfoot></table></div>`;
   box.querySelectorAll('tr[data-e]').forEach(tr => tr.onclick = () => { const d = box.querySelector(`tr[data-d="${tr.dataset.e}"]`); d.hidden = !d.hidden });
 }
 async function paperIntra(view, P) {
@@ -799,7 +799,7 @@ async function renderPaper(view) {
     view.querySelector('#pgm').onclick = e => { const b = e.target.closest('button'); if (!b || b.dataset.v === pgMode) return; pgMode = b.dataset.v; try { localStorage.setItem('pgMode', pgMode) } catch (_) { } view.querySelectorAll('#pgm button').forEach(x => x.setAttribute('aria-pressed', x === b)); growth() };
   }
   paperIntra(view, P);
-  paperEntries(view, O, P);
+  paperEntries(view, O, P, { e0: h0.equity, eq, ret, qqqR });
   rerender = () => { };
 }
 function otherIncome() { try { return +localStorage.getItem('otrosIngresos') || 0 } catch (e) { return 0 } }
