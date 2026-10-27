@@ -663,13 +663,15 @@ async function paperEntries(view, O, P) {
     .sort((a, b) => (b.d2 || '9').localeCompare(a.d2 || '9') || b.d.localeCompare(a.d));
   const done = E.filter(e => e.vs != null), win = done.filter(e => e.vs > 0).length;
   let acc = 1, accQ = 1; [...E].reverse().forEach(e => { if (e.ret != null) acc *= 1 + e.ret; if (e.qqq != null) accQ *= 1 + e.qqq });
+  const usdT = E.reduce((a, e) => a + (e.usd || 0), 0);
   const vs = v => v == null ? '–' : (v > 0 ? '+' : '') + fmt(v * 100, 2) + ' pts';
   box.innerHTML = `<p class="note" style="margin:0 0 8px"><b>${win} de ${done.length} entradas le ganaron a QQQ.</b> Encadenadas, la cartera lleva ${pct(acc - 1)} y QQQ en los mismos tramos ${pct(accQ - 1)}. Toca una entrada para ver sus acciones.</p>
     <div class="tablebox"><table><thead><tr><th style="text-align:left">Compra</th><th style="text-align:left">Venta</th><th>Acciones</th><th>Invertido</th><th>Resultado</th><th>US$</th><th>QQQ</th><th title="Resultado de la cartera menos el de QQQ en el mismo período, en puntos">vs QQQ</th></tr></thead><tbody>
     ${E.map((e, i) => `<tr data-e="${i}"><td style="text-align:left">${fdate(e.d)}</td><td style="text-align:left">${e.d2 ? fdate(e.d2) : '<span class="sig sig-long">Abierta</span>'}</td><td class="num">${e.L.length}</td><td class="num">${fmt(e.cost, 0)}</td>
       <td class="num ${cls(e.ret)}"><b>${pct(e.ret)}</b></td><td class="num ${cls(e.usd)}">${fmt(e.usd)}</td><td class="num ${cls(e.qqq)}">${pct(e.qqq)}</td><td class="num ${cls(e.vs)}"><b>${vs(e.vs)}</b></td></tr>
       <tr class="ent-d" data-d="${i}" hidden><td colspan="8" style="padding:4px 0 10px"><table style="width:100%;font-size:.92em"><tbody>${e.L.map(r => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(r.t.replace('.', '-'))}"><span class="tk">${esc(r.t)}</span></a></td><td class="num">${fmt(r.px)} → ${fmt(r.px2)}</td><td class="num ${cls(r.ret)}">${pct(r.ret)}</td><td class="num ${cls(r.usd)}">${fmt(r.usd)} US$</td><td class="num ${cls(r.vs)}">${vs(r.vs)}</td></tr>`).join('')}</tbody></table></td></tr>`).join('')}
-    </tbody></table></div>`;
+    </tbody><tfoot><tr style="cursor:default;border-top:2px solid var(--line)"><td style="text-align:left" colspan="3"><b>Acumulado desde el inicio</b></td><td class="num">${fmt(E[E.length - 1].cost, 0)}</td>
+      <td class="num ${cls(acc - 1)}"><b>${pct(acc - 1)}</b></td><td class="num ${cls(usdT)}">${fmt(usdT)}</td><td class="num ${cls(accQ - 1)}">${pct(accQ - 1)}</td><td class="num ${cls(acc - accQ)}"><b>${vs(acc - accQ)}</b></td></tr></tfoot></table></div>`;
   box.querySelectorAll('tr[data-e]').forEach(tr => tr.onclick = () => { const d = box.querySelector(`tr[data-d="${tr.dataset.e}"]`); d.hidden = !d.hidden });
 }
 async function paperIntra(view, P) {
