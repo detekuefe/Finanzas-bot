@@ -157,6 +157,10 @@ const fdate=s=>{if(!s)return'–';const [y,m,d]=s.split('-');return `${d}-${MES[
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const tzParts=(epoch,tz)=>{const o={};new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit'}).formatToParts(new Date(epoch*1000)).forEach(p=>o[p.type]=p.value);return o};
 const tzOffset=(epoch,tz)=>{const p=tzParts(epoch,tz);return(Date.UTC(+p.year,+p.month-1,+p.day,+p.hour%24,+p.minute,+p.second)/1000)-epoch};
+const isReg=epoch=>{const p=tzParts(epoch,'America/New_York'),m=(+p.hour%24)*60+(+p.minute),w=new Date(Date.UTC(+p.year,+p.month-1,+p.day)).getUTCDay();return m>=570&&m<960&&w>0&&w<6};
+// Fuera del horario regular el precio es el cierre; el último precio pre o post se muestra aparte
+const regPx=T=>T.lastBar&&isReg(T.lastBar[0])?T.lastBar[4]:T.closes[T.closes.length-1][1];
+const postOf=lb=>lb&&!isReg(lb[0])?lb:null;
 const clTime=epoch=>{const p=tzParts(epoch,'America/Santiago');return`${p.hour}:${p.minute}`};
 const nyMin=epoch=>{const p=tzParts(epoch,'America/New_York');return(+p.hour%24)*60+(+p.minute)};
 
@@ -180,7 +184,7 @@ const inCur=cl=>{const s=fxSum();return CUR==='CLP'&&s?cl.map(([d,c])=>[d,c*fxAt
 const curSeg=id=>`<div class="seg" id="${id}" title="Moneda en que se miden precios y rentabilidades"><button data-c="USD" aria-pressed="${CUR==='USD'}">Dólares</button><button data-c="CLP" aria-pressed="${CUR==='CLP'}">Pesos</button></div>`;
 const curCl=t=>t==='USDCLP'?SUM.tickers[t].closes:inCur(SUM.tickers[t].closes);
 function computeMetrics(){M={};for(const t of ORDER.concat(SUM.tickers.USDCLP?['USDCLP']:[])){const raw=SUM.tickers[t].closes,cl=curCl(t),cu=raw.map(x=>x[1]),c=cl.map(x=>x[1]),n=c.length;const at=k=>n>k?c[n-1]/c[n-1-k]-1:null;const s20=sma(cu,20);const lb=SUM.tickers[t].lastBar;const fxl=CUR==='CLP'&&fxSum()?fxSum()[fxSum().length-1][1]:1;
-  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-10),lastBar:lb,price:lb?lb[4]*fxl:c[n-1]}}}
+  M[t]={last:c[n-1],lastDate:cl[n-1][0],d1:at(1),d5:at(5),d21:at(21),y1:at(Math.min(252,n-1)),vsS20:s20[n-1]?cu[n-1]/s20[n-1]-1:null,rsi:rsi(cu)[n-1],spark:c.slice(-10),lastBar:lb,price:lb&&isReg(lb[0])?lb[4]*fxl:c[n-1],post:postOf(lb)?lb[4]*fxl:null,postT:postOf(lb)?lb[0]:null}}}
 
 const led=document.getElementById('led'),smsg=document.getElementById('smsg');
 function setStatus(kind,msg){led.className='led '+kind;smsg.textContent=msg}
@@ -220,7 +224,7 @@ function renderSummary(view){
   </div>`;
   const drawRows=()=>view.querySelectorAll('tbody[data-g]').forEach(tb=>{const rows=[...G[tb.dataset.g]].sort((a,b)=>{if(sortKey==='t')return sortDir*a.localeCompare(b);const x=M[a][sortKey],y=M[b][sortKey];return sortDir*((x??-1e9)-(y??-1e9))});
     tb.innerHTML=rows.map(t=>{const m=M[t];return`<tr data-t="${t}"><td><span class="tk">${t}</span><span class="rb">${esc(t==='USDCLP'?'Dólar en pesos chilenos':RUBRO[t]||'')}</span></td>
-    <td class="num">${fmt(m.price)}<span class="rb">${m.lastBar?fdate(new Date(m.lastBar[0]*1000).toISOString().slice(0,10))+' '+clTime(m.lastBar[0]):fdate(m.lastDate)}</span></td>
+    <td class="num">${fmt(m.price)}<span class="rb">${m.lastBar&&!m.post?fdate(new Date(m.lastBar[0]*1000).toISOString().slice(0,10))+' '+clTime(m.lastBar[0]):'cierre '+fdate(m.lastDate)}</span>${m.post?`<span class="rb" title="Precio fuera del horario regular, ${clTime(m.postT)} h">${nyMin(m.postT)<570?'pre':'post'} ${fmt(m.post)} <span class="${cls(m.post/m.price-1)}">${pct(m.post/m.price-1)}</span></span>`:''}</td>
     <td class="num ${cls(m.d1)}">${pct(m.d1)}</td><td class="num ${cls(m.d5)}">${pct(m.d5)}</td><td class="num ${cls(m.d21)}">${pct(m.d21)}</td><td class="num ${cls(m.y1)}">${pct(m.y1)}</td>
     <td class="num ${cls(m.vsS20)}">${pct(m.vsS20)}</td>
     <td class="num">${m.rsi==null?'–':`<span class="pill ${m.rsi>70?'down':m.rsi<30?'up':'muted'}">${fmt(m.rsi,0)}</span>`}</td>
@@ -266,7 +270,7 @@ async function renderAsset(view,t){
   view.innerHTML=`
   <section class="panel"><div class="hero">
     <div class="stat"><b>${esc(RUBRO[t]||'')}</b><span class="big">${t}</span></div>
-    <div class="stat"><b>Precio${lb?' · '+clTime(lb[0])+' h':''}</b><span class="num" style="font-size:1.4rem">${fmt(m.price)} <span class="${cls(m.d1)}" style="font-size:1rem">${pct(m.d1)}</span></span></div>
+    <div class="stat"><b>Precio${lb&&!m.post?' · '+clTime(lb[0])+' h':' · cierre'}</b><span class="num" style="font-size:1.4rem">${fmt(m.price)} <span class="${cls(m.d1)}" style="font-size:1rem">${pct(m.d1)}</span></span></div>${m.post?`<div class="stat"><b>${nyMin(m.postT)<570?'Pre-apertura':'Post-cierre'} · ${clTime(m.postT)} h</b><span class="num" style="font-size:1.4rem">${fmt(m.post)} <span class="${cls(m.post/m.price-1)}" style="font-size:1rem">${pct(m.post/m.price-1)}</span></span></div>`:''}
     <div class="stat"><b>5 días</b><span class="num ${cls(m.d5)}">${pct(m.d5)}</span></div>
     <div class="stat"><b>1 mes</b><span class="num ${cls(m.d21)}">${pct(m.d21)}</span></div>
     <div class="stat"><b>1 año</b><span class="num ${cls(m.y1)}">${pct(m.y1)}</span></div>
@@ -640,7 +644,7 @@ async function paperEntries(view, O, P, T) {
   const qAt = (t, d, px) => { const bs = reg(((cacheI[t.replace('.', '-')] || {}).days || {})[d]), Q = reg(((cacheI.QQQ || {}).days || {})[d]);
     const b = bs.find(b => b[3] <= px && px <= b[2]); if (b && Q.length) { const q = Q.find(x => x[0] === b[0]) || Q.filter(x => x[0] <= b[0]).pop(); if (q) return (q[1] + q[4]) / 2 }
     return qo[d] ?? null };
-  const QS = SUM && SUM.tickers.QQQ, qNow = QS ? (QS.lastBar ? QS.lastBar[4] : QS.closes[QS.closes.length - 1][1]) : null;
+  const QS = SUM && SUM.tickers.QQQ, qNow = QS ? regPx(QS) : null;
   const F = O.filter(o => (o.status === 'filled' || o.status === 'partially_filled') && o.qty && o.price).map(o => ({ t: o.t, d: (o.filled || o.d).slice(0, 10), side: o.side, q: +o.qty, px: +o.price }))
     .sort((a, b) => a.d.localeCompare(b.d) || (a.side === 'sell' ? -1 : 1) - (b.side === 'sell' ? -1 : 1));
   const open = {}, rows = [];
@@ -709,7 +713,7 @@ function paperDaily() {
   const out = [];
   for (let i = 1; i < H.length; i++) out.push({ d: H[i].d, a: H[i].equity / H[i - 1].equity - 1, q: qRet(H[i].d) });
   const last = H[H.length - 1], today = qd[qd.length - 1];
-  if (today > last.d && PAP.equity) out.push({ d: today, a: PAP.equity / last.equity - 1, q: qRet(today, Q.lastBar ? Q.lastBar[4] : null), live: true });
+  if (today > last.d && PAP.equity) out.push({ d: today, a: PAP.equity / last.equity - 1, q: qRet(today, regPx(Q)), live: true });
   return out.slice(-40);
 }
 function dailySvg(R) {
@@ -730,13 +734,27 @@ const ordTable = (rows, empty) => `<div class="tablebox"><table><thead><tr><th s
     ${rows.length ? rows.map(o => { const off = ['canceled', 'expired', 'rejected'].includes(o.status); return `<tr style="cursor:default${off ? ';opacity:.45' : ''}"><td style="text-align:left">${fdate(o.filled || o.d)}</td><td style="text-align:left"><span class="tk">${esc(o.t)}</span></td><td style="text-align:left">${actPill(o.side)}</td><td style="text-align:left;white-space:nowrap">${esc(ORD_ST[o.status] || o.status)}</td><td class="num">${o.usd == null ? 'Todo' : fmt(o.usd)}</td><td class="num">${o.qty ? fmt(o.qty, 4) : '–'}</td><td class="num">${o.price ? fmt(o.price) : '–'}</td></tr>` }).join('') : `<tr><td colspan="7" class="muted">${empty}</td></tr>`}
     </tbody></table></div>`;
 const ORD_ST = { filled: 'Ejecutada', partially_filled: 'Parcial', accepted: 'En cola', new: 'En cola', pending_new: 'En cola', canceled: 'Cancelada', expired: 'Vencida', rejected: 'Rechazada' };
+// Alpaca valora las posiciones con el último precio, incluido el pre y post mercado. Fuera del horario regular
+// la página usa el cierre (igual que el Resumen) y deja el precio fuera de horario aparte, en p.post.
+function paperRegular() {
+  if (!PAP._raw) PAP._raw = { equity: PAP.equity, positions: (PAP.positions || []).map(p => ({ ...p })) };
+  let dv = 0;
+  PAP.positions = PAP._raw.positions.map(r => {
+    const T = SUM && SUM.tickers[r.t.replace('.', '-')], cl = T && T.closes.length ? T.closes[T.closes.length - 1][1] : null;
+    if (cl == null || (T.lastBar && isReg(T.lastBar[0])) || !r.price) return { ...r };
+    const prev = r.price / (1 + (r.day || 0)), value = r.qty * cl; dv += value - r.value;
+    return { ...r, price: cl, value, pl: value - r.qty * r.avg, plpc: cl / r.avg - 1, day: prev ? cl / prev - 1 : r.day, post: Math.abs(r.price / cl - 1) > 1e-4 ? r.price : null };
+  });
+  if (PAP._raw.equity != null) PAP.equity = PAP._raw.equity + dv;
+}
 async function renderPaper(view) {
   if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})); PTAX = await getJSON('data/alpaca_tax.json').catch(() => null) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
+  paperRegular();
   const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
   const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
   // Referencias desde el cierre del día de inicio hasta el último precio descargado (incluye el día en curso);
   // el historial solo suma un punto por cierre, así que durante el día quedaría desfasado.
-  const live = t => { const T = SUM && SUM.tickers[t]; if (!T || !h0.d) return null; const b = fxAt(T.closes, h0.d), n = T.lastBar ? T.lastBar[4] : T.closes[T.closes.length - 1][1]; return b ? n / b - 1 : null };
+  const live = t => { const T = SUM && SUM.tickers[t]; if (!T || !h0.d) return null; const b = fxAt(T.closes, h0.d), n = regPx(T); return b ? n / b - 1 : null };
   const dayR = PAP.last_equity ? eq / PAP.last_equity - 1 : null;
   const spyR = live('SP500') ?? (h0.spy && hl.spy ? hl.spy / h0.spy - 1 : null), qqqR = live('QQQ') ?? (h0.qqq && hl.qqq ? hl.qqq / h0.qqq - 1 : null), vsQ = ret != null && qqqR != null ? (1 + ret) / (1 + qqqR) - 1 : null;
   const P = (PAP.positions || []).slice().sort((a, b) => b.value - a.value), O = PAP.orders || [], E = PAP.errors || [];
@@ -767,8 +785,8 @@ async function renderPaper(view) {
     <div id="pibox"><p class="muted" style="margin:0">Cargando precios intradía…</p></div>
     <h3 style="margin:16px 0 6px">Variación diaria: cartera vs Nasdaq-100 (QQQ)</h3>
     ${(() => { const R = paperDaily(); return R.length ? `<div class="legend" style="margin-bottom:4px"><span><i style="background:${css('--accent')}"></i>Cartera</span><span><i style="background:#2a9bb0"></i>QQQ</span></div>${dailySvg(R)}<p class="note" style="margin-top:4px">Cada par de barras es un día: cuánto subió o bajó la cartera y cuánto el Nasdaq-100, desde el cierre anterior. ${R.some(r => r.live) ? 'El último día está en curso y se actualiza cada 15 minutos. ' : ''}En ${R.filter(r => r.q != null && r.a > r.q).length} de ${R.filter(r => r.q != null).length} días la cartera le ganó a QQQ.</p>` : '<p class="muted" style="margin:0">Aparece desde el primer día con la cartera invertida.</p>' })()}</section>
-  <section class="panel"><h2>Posiciones</h2><p class="sub">"Hoy" es la variación desde el cierre de ayer, igual que "Día" en el Resumen. "Ganancia" y "%" se miden desde el precio de compra, así que pueden tener distinto signo: si una acción abrió con caída y se compró ahí, hoy puede ir en rojo y la posición en verde.</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th title="Variación desde el cierre de ayer">Hoy</th><th title="Desde el precio de compra">Ganancia</th><th title="Desde el precio de compra">%</th></tr></thead><tbody>
-    ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.day)}">${pct(p.day)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td></td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="8" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
+  <section class="panel"><h2>Posiciones</h2><p class="sub">"Hoy" es la variación desde el cierre de ayer, igual que "Día" en el Resumen. "Ganancia" y "%" se miden desde el precio de compra, así que pueden tener distinto signo: si una acción abrió con caída y se compró ahí, hoy puede ir en rojo y la posición en verde.${P.some(p => p.post) ? ' Fuera del horario regular todo se valora al cierre; el precio de pre o post mercado aparece debajo, aparte, y entra recién cuando abra el mercado.' : ''}</p><div class="tablebox"><table><thead><tr><th style="text-align:left">Acción</th><th>Cantidad</th><th>Precio de compra</th><th>Precio actual</th><th>Valor</th><th title="Variación desde el cierre de ayer">Hoy</th><th title="Desde el precio de compra">Ganancia</th><th title="Desde el precio de compra">%</th></tr></thead><tbody>
+    ${P.length ? P.map(p => `<tr style="cursor:default"><td style="text-align:left"><a href="${tkLink(p.t.replace('.', '-'))}"><span class="tk">${esc(p.t)}</span></a></td><td class="num">${fmt(p.qty, 4)}</td><td class="num">${fmt(p.avg)}</td><td class="num">${fmt(p.price)}${p.post ? `<span class="rb">fuera de horario ${fmt(p.post)} <span class="${cls(p.post / p.price - 1)}">${pct(p.post / p.price - 1)}</span></span>` : ''}</td><td class="num">${fmt(p.value)}</td><td class="num ${cls(p.day)}">${pct(p.day)}</td><td class="num ${cls(p.pl)}">${fmt(p.pl)}</td><td class="num ${cls(p.plpc)}">${pct(p.plpc)}</td></tr>`).join('') + `<tr style="cursor:default;font-weight:600"><td style="text-align:left">Total</td><td></td><td></td><td></td><td class="num">${fmt(invested)}</td><td></td><td class="num ${cls(pl)}">${fmt(pl)}</td><td></td></tr>` : `<tr><td colspan="8" class="muted">${O.some(o => ORD_ST[o.status] === 'En cola') ? 'Sin posiciones todavía: las órdenes están en cola para la próxima apertura.' : 'Sin posiciones (en efectivo).'}</td></tr>`}
     </tbody></table></div></section>
   <section class="panel"><h2>Market timing</h2><p class="sub">Cada entrada es la cartera completa, desde el día en que se compró hasta el día en que se vendió (o hasta hoy si sigue abierta), frente a QQQ en el mismo tramo. QQQ se toma en la misma vela de 5 minutos en que se ejecutó cada compra y cada venta (las de la regla van en la apertura; las ventas manuales, a la hora en que se pidieron).</p><div id="pent"><p class="muted" style="margin:0">Calculando…</p></div></section>
   <section class="panel"><h2>Órdenes en curso</h2>${ordTable(O.filter(o => ORD_OPEN.includes(o.status)), 'Sin órdenes en curso.')}</section>
