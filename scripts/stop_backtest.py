@@ -64,7 +64,7 @@ def main():
             if first[i]:
                 banned = set()
                 reb(i)
-                continue
+                out = []
             for t in out:
                 n += 1
                 wt = w.pop(t)
