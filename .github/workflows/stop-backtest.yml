@@ -1,10 +1,8 @@
 name: Backtest venta por caída
 
 # Prueba de la regla de venta por caída en el día. Solo imprime resultados en el registro.
+# Se corre a mano desde Actions.
 on:
-  push:
-    branches: [claude/project-thread-8c711c]
-    paths: [scripts/stop_backtest.py, .github/workflows/stop-backtest.yml]
   workflow_dispatch:
 
 permissions:

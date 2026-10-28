@@ -13,11 +13,18 @@ Claves: variables de entorno ALPACA_KEY_ID y ALPACA_SECRET_KEY (secrets del repo
 Sin claves, o con --dry-run, solo muestra las órdenes que enviaría.
 
 Escribe data/alpaca_paper.json con el valor diario de la cuenta y las órdenes enviadas.
+
+Venta por caída (--stop, corre cada 15 minutos): entre 15 minutos después de la apertura y 10 minutos antes
+del cierre de Nueva York, si una acción de la cuenta va -10% o peor desde el cierre anterior, se vende solo
+esa y se compra con lo obtenido la mejor del ranking de la regla que no esté en la cuenta. La vendida no
+vuelve hasta el rebalanceo del mes; mientras tanto la corrida de cierre trata a la reemplazante como si
+fuera la de la regla. El registro queda en data/alpaca_stops.json.
 """
 import argparse
 import json
 import os
 import sys
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -30,6 +37,9 @@ CONTROL = os.path.join(DATA, "alpaca_control.json")  # pausa manual, ver scripts
 N = 10
 MIN_ORDER = 1.0  # Alpaca no acepta órdenes fraccionadas de menos de 1 dólar
 DRIFT = 0.02  # en un rebalanceo, no toca posiciones que estén a menos de 2% de su peso objetivo
+STOPS = os.path.join(DATA, "alpaca_stops.json")
+STOP = 0.10  # caída en el día, desde el cierre anterior, que dispara la venta
+STOP_FROM, STOP_TO = (9, 45), (15, 50)  # hora de Nueva York: 15 min después de la apertura y 10 min antes del cierre
 
 
 def load(path, default):
@@ -85,6 +95,12 @@ class Paper:
     def close(self, sym):
         return self.call("DELETE", f"/v2/positions/{sym}")
 
+    def clock(self):
+        return self.call("GET", "/v2/clock")
+
+    def get_order(self, oid):
+        return self.call("GET", f"/v2/orders/{oid}")
+
     def order(self, sym, side, notional):
         return self.call("POST", "/v2/orders", json={"symbol": sym, "side": side, "type": "market",
                                                       "time_in_force": "day", "notional": f"{notional:.2f}"})
@@ -103,6 +119,89 @@ def plan(target, positions, equity, rebalance):
     # primero las ventas, para liberar efectivo
     orders.sort(key=lambda o: o[1] == "buy")
     return [o for o in orders if o[1] == "close" or o[2] >= MIN_ORDER]
+
+
+def stops_state(st):
+    """Reemplazos vigentes por venta por caída. Se reinician cuando la regla pasa a un mes nuevo (rebalanceo)."""
+    s = load(STOPS, {"log": []})
+    month = st["date"][:7]
+    if s.get("month") != month:
+        s.update({"month": month, "subs": {}, "banned": []})
+    return s
+
+
+def apply_subs(target, s):
+    """Cartera de la regla con las vendidas por caída cambiadas por sus reemplazantes."""
+    return [s["subs"].get(t, t) for t in target]
+
+
+def run_stops(dry=False):
+    """Vende la acción que cae -10% o más en el día y compra la siguiente del ranking. Solo en horario regular."""
+    key, secret = os.environ.get("ALPACA_KEY_ID"), os.environ.get("ALPACA_SECRET_KEY")
+    if not (key and secret):
+        print("Sin claves de Alpaca: no se revisan caídas.")
+        return
+    now = datetime.now(ZoneInfo("America/New_York"))
+    if not (STOP_FROM <= (now.hour, now.minute) < STOP_TO):
+        print(f"Fuera de la ventana de venta por caída ({now:%H:%M} de Nueva York).")
+        return
+    if load(CONTROL, {}).get("paused"):
+        print("Pausado: no se revisan caídas.")
+        return
+    m = load(os.path.join(DATA, "momentum.json"), None)
+    if not m:
+        return
+    api = Paper(key, secret)
+    if not api.clock().get("is_open"):
+        print("El mercado está cerrado hoy.")
+        return
+    st, s = m["state"], stops_state(m["state"])
+    today = now.date().isoformat()
+    bought_today = {e["bought"] for e in s["log"] if e["d"] == today and e.get("bought")}
+    pos = api.positions_detail()
+    held = {p["t"] for p in pos} | set(apply_subs([to_alpaca(h["t"]) for h in st["holding"]], s))
+    hit = [p for p in pos if p["day"] <= -STOP and p["t"] not in bought_today and p["t"] not in s["banned"]]
+    if not hit:
+        print("Sin caídas de -10% o más en la cuenta.")
+    for p in hit:
+        cand = next((c for c in (to_alpaca(r["t"]) for r in st.get("top", []))
+                     if c not in held and c not in s["banned"] and c != p["t"]), None)
+        print(f"  {p['t']} va {p['day'] * 100:.1f}% en el día: se vende y entra {cand or 'nadie (sin candidato)'}")
+        if dry:
+            continue
+        entry = {"d": today, "time": now.strftime("%H:%M"), "sold": p["t"], "day": p["day"], "price": p["price"]}
+        try:
+            o = api.close(p["t"])
+            for _ in range(20):  # a mercado y en horario regular se ejecuta en segundos
+                o = api.get_order(o["id"])
+                if o["status"] == "filled":
+                    break
+                time.sleep(3)
+            got = float(o.get("filled_qty") or 0) * float(o.get("filled_avg_price") or 0) or p["value"]
+            entry["usd"] = round(got, 2)
+        except RuntimeError as e:
+            entry["error"] = str(e)[:300]
+            s["log"].append(entry)
+            continue
+        s["banned"].append(p["t"])
+        orig = next((k for k, v in s["subs"].items() if v == p["t"]), p["t"])  # si ya era reemplazante, hereda su lugar
+        if cand:
+            s["subs"][orig] = cand
+            held.add(cand)
+            usd = min(got, float(api.account()["cash"]))
+            if usd >= MIN_ORDER:
+                try:
+                    api.order(cand, "buy", usd)
+                    entry.update({"bought": cand, "buy_usd": round(usd, 2)})
+                except RuntimeError as e:
+                    entry["error"] = str(e)[:300]
+        else:
+            s["subs"].pop(orig, None)
+        held.discard(p["t"])
+        s["log"].append(entry)
+    if not dry:
+        with open(STOPS, "w") as f:
+            json.dump(s, f, separators=(",", ":"))
 
 
 def refresh_status():
@@ -130,7 +229,11 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="muestra las órdenes sin enviarlas")
     ap.add_argument("--force", action="store_true", help="opera aunque los datos no sean de hoy")
     ap.add_argument("--status", action="store_true", help="solo actualiza valor, posiciones y órdenes; no opera")
+    ap.add_argument("--stop", action="store_true", help="venta por caída de -10% en el día (cada 15 minutos)")
     args = ap.parse_args()
+    if args.stop:
+        run_stops(args.dry_run)
+        return
     if args.status:
         refresh_status()
         return
@@ -151,7 +254,8 @@ def main():
             print(f"{why}: no se opera, solo se actualiza el estado de la cuenta.")
             refresh_status()
             return
-    target = [to_alpaca(h["t"]) for h in st["holding"]]
+    stops = stops_state(st)
+    target = apply_subs([to_alpaca(h["t"]) for h in st["holding"]], stops)
     ev = m.get("events") or []
     rebalance = bool(ev) and ev[-1]["d"] == st["date"]
 
@@ -213,6 +317,9 @@ def main():
     log["errors"] = [{"d": st["date"], **o} for o in sent if "error" in o]
     with open(OUT, "w") as f:
         json.dump(log, f, separators=(",", ":"))
+    if stops.get("subs") or os.path.exists(STOPS):  # guarda el reinicio de mes
+        with open(STOPS, "w") as f:
+            json.dump(stops, f, separators=(",", ":"))
 
 if __name__ == "__main__":
     main()
