@@ -577,7 +577,7 @@ async function renderMomentum(view) {
   rerender = () => { };
 }
 // ---------- Simulación en Alpaca paper (data/alpaca_paper.json, scripts/alpaca_paper.py) ----------
-let PAP = null, PCTL = null, PTAX = null, taxYear = null;
+let PAP = null, PCTL = null, PTAX = null, PSTOP = null, taxYear = null;
 // Impuesto Global Complementario: tramos anuales en UTA (desde AT 2021)
 const IGC = [[13.5, 0], [30, .04], [50, .08], [70, .135], [90, .23], [120, .304], [310, .35], [Infinity, .40]];
 function igc(base, uta) { let t = 0, lo = 0; for (const [hi, r] of IGC) { const top = hi * uta; if (base > lo) t += (Math.min(base, top) - lo) * r; lo = top } return t }
@@ -748,7 +748,7 @@ function paperRegular() {
   if (PAP._raw.equity != null) PAP.equity = PAP._raw.equity + dv;
 }
 async function renderPaper(view) {
-  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})); PTAX = await getJSON('data/alpaca_tax.json').catch(() => null) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
+  if (!PAP) { view.innerHTML = '<p class="empty">Cargando simulación…</p>'; try { PAP = await getJSON('data/alpaca_paper.json'); PCTL = await getJSON('data/alpaca_control.json').catch(() => ({})); PTAX = await getJSON('data/alpaca_tax.json').catch(() => null); PSTOP = await getJSON('data/alpaca_stops.json').catch(() => null) } catch (e) { view.innerHTML = '<p class="empty">La simulación en Alpaca todavía no tiene datos. Se registran con la corrida de cierre.</p>'; return } if (curRoute !== 'paper') return }
   paperRegular();
   const H = PAP.history || [], h0 = H[0] || {}, hl = H[H.length - 1] || {};
   const eq = PAP.equity ?? hl.equity, ret = h0.equity ? eq / h0.equity - 1 : null;
@@ -760,7 +760,7 @@ async function renderPaper(view) {
   const P = (PAP.positions || []).slice().sort((a, b) => b.value - a.value), O = PAP.orders || [], E = PAP.errors || [];
   const invested = P.reduce((a, p) => a + p.value, 0), pl = P.reduce((a, p) => a + p.pl, 0);
   view.innerHTML = `<section class="panel"><h2>Simulación en Alpaca (dinero ficticio)</h2>
-    <p class="sub">Cuenta paper de Alpaca que replica cada día la <a href="#momentum">estrategia de momentum</a>: al cierre se envían las compras y ventas de la regla y se ejecutan en la apertura siguiente, con precios reales de mercado. Sirve para ver si en la práctica se comporta como el backtest antes de usar dinero real. Inicio: ${h0.d ? fdate(h0.d) : '–'} · actualizado ${esc(PAP.updated || '–')} (hora de Chile).</p>
+    <p class="sub">Cuenta paper de Alpaca que replica cada día la <a href="#momentum">estrategia de momentum</a>: al cierre se envían las compras y ventas de la regla y se ejecutan en la apertura siguiente, con precios reales de mercado. Además, entre las 10:45 y 10 minutos antes del cierre (9:45 a 15:50 de Nueva York), si una acción va −10% o peor en el día se vende solo esa y entra la siguiente del ranking; la vendida no vuelve hasta el rebalanceo del mes.${(() => { const L = ((PSTOP && PSTOP.log) || []).slice(-5).reverse(); return L.length ? ' Últimas ventas por caída: ' + L.map(e => `${esc(e.sold)} ${pct(e.day)} → ${esc(e.bought || 'efectivo')} (${fdate(e.d)} ${esc(e.time)} NY)${e.error ? ' con error' : ''}`).join('; ') + '.' : '' })()} Sirve para ver si en la práctica se comporta como el backtest antes de usar dinero real. Inicio: ${h0.d ? fdate(h0.d) : '–'} · actualizado ${esc(PAP.updated || '–')} (hora de Chile).</p>
     <div class="sigbox" style="margin:10px 0;padding:10px 12px;border-radius:6px;border:1px solid var(--line);box-shadow:inset 3px 0 0 var(${PCTL && PCTL.paused ? '--down' : '--up'})">${PCTL && PCTL.paused
       ? `<b>Pausada desde el ${esc(PCTL.since)}${PCTL.action === 'vender_y_pausar' ? ', con todo vendido' : ', sin vender'}.</b> No se envían órdenes hasta iniciarlo. Al iniciar, la cuenta compra de inmediato la cartera de la regla (con el mercado cerrado, en la apertura siguiente).`
       : '<b>Activa.</b> Cada cierre la cuenta se alinea con la regla.'}

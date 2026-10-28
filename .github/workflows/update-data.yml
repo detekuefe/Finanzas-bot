@@ -49,7 +49,16 @@ jobs:
           ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
         run: python scripts/alpaca_paper.py
-      # En las demás corridas (cada 15 minutos) solo se lee la cuenta: valor, posiciones y órdenes ejecutadas.
+      # Venta por caída: en horario regular, si una acción de la cuenta va -10% o peor en el día, se vende y
+      # entra la siguiente del ranking. Es lo único que opera fuera de la corrida de cierre.
+      - name: Venta por caída de -10% en el día (Alpaca paper)
+        if: github.event.schedule != '30 22 * * 1-5' && github.event_name != 'workflow_dispatch'
+        continue-on-error: true
+        env:
+          ALPACA_KEY_ID: ${{ secrets.ALPACA_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: python scripts/alpaca_paper.py --stop
+      # En las demás corridas (cada 15 minutos) se lee la cuenta: valor, posiciones y órdenes ejecutadas.
       - name: Estado de la cuenta Alpaca paper (sin operar)
         if: github.event.schedule != '30 22 * * 1-5' && github.event_name != 'workflow_dispatch'
         continue-on-error: true
