@@ -15,7 +15,7 @@ Sin claves, o con --dry-run, solo muestra las órdenes que enviaría.
 Escribe data/alpaca_paper.json con el valor diario de la cuenta y las órdenes enviadas.
 
 Venta por caída (--stop, corre cada 15 minutos): entre 15 minutos después de la apertura y 10 minutos antes
-del cierre de Nueva York, si una acción de la cuenta va -10% o peor desde el cierre anterior, se vende solo
+del cierre de Nueva York, si una acción de la cuenta va -18% o peor desde el cierre anterior, se vende solo
 esa y se compra con lo obtenido la mejor del ranking de la regla que no esté en la cuenta. La vendida no
 vuelve hasta el rebalanceo del mes; mientras tanto la corrida de cierre trata a la reemplazante como si
 fuera la de la regla. El registro queda en data/alpaca_stops.json.
@@ -38,7 +38,7 @@ N = 10
 MIN_ORDER = 1.0  # Alpaca no acepta órdenes fraccionadas de menos de 1 dólar
 DRIFT = 0.02  # en un rebalanceo, no toca posiciones que estén a menos de 2% de su peso objetivo
 STOPS = os.path.join(DATA, "alpaca_stops.json")
-STOP = 0.10  # caída en el día, desde el cierre anterior, que dispara la venta
+STOP = 0.18  # caída en el día, desde el cierre anterior, que dispara la venta
 STOP_FROM, STOP_TO = (9, 45), (15, 50)  # hora de Nueva York: 15 min después de la apertura y 10 min antes del cierre
 
 
@@ -136,7 +136,7 @@ def apply_subs(target, s):
 
 
 def run_stops(dry=False):
-    """Vende la acción que cae -10% o más en el día y compra la siguiente del ranking. Solo en horario regular."""
+    """Vende la acción que cae -18% o más en el día y compra la siguiente del ranking. Solo en horario regular."""
     key, secret = os.environ.get("ALPACA_KEY_ID"), os.environ.get("ALPACA_SECRET_KEY")
     if not (key and secret):
         print("Sin claves de Alpaca: no se revisan caídas.")
@@ -162,7 +162,7 @@ def run_stops(dry=False):
     held = {p["t"] for p in pos} | set(apply_subs([to_alpaca(h["t"]) for h in st["holding"]], s))
     hit = [p for p in pos if p["day"] <= -STOP and p["t"] not in bought_today and p["t"] not in s["banned"]]
     if not hit:
-        print("Sin caídas de -10% o más en la cuenta.")
+        print("Sin caídas de -18% o más en la cuenta.")
     for p in hit:
         cand = next((c for c in (to_alpaca(r["t"]) for r in st.get("top", []))
                      if c not in held and c not in s["banned"] and c != p["t"]), None)
@@ -229,7 +229,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="muestra las órdenes sin enviarlas")
     ap.add_argument("--force", action="store_true", help="opera aunque los datos no sean de hoy")
     ap.add_argument("--status", action="store_true", help="solo actualiza valor, posiciones y órdenes; no opera")
-    ap.add_argument("--stop", action="store_true", help="venta por caída de -10% en el día (cada 15 minutos)")
+    ap.add_argument("--stop", action="store_true", help="venta por caída de -18% en el día (cada 15 minutos)")
     args = ap.parse_args()
     if args.stop:
         run_stops(args.dry_run)
