@@ -86,7 +86,7 @@ def main():
         s = max(next(i for i in range(len(D)) if D[i] >= a), LB["12m"])
         e = max(i for i in range(len(D)) if b is None or D[i] <= b)
         row = {"periodo": lab, "desde": D[s], "hasta": D[e]}
-        for x, mode in ((0, "no"), (0.10, "cierre"), (0.10, "dia"), (0.07, "dia"), (0.15, "dia")):
+        for x, mode in ((0, "no"), (0.10, "cierre"), (0.10, "dia"), (0.07, "dia"), (0.15, "dia"), (0.18, "dia"), (0.20, "dia")):
             r, dd, n = sim(s, e, x, mode)
             row[f"{mode}{int(x * 100)}"] = {"ret": round(r, 4), "dd": round(dd, 4), "ventas": n}
         res.append(row)
