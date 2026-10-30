@@ -1,1 +1,1 @@
-{"log":[{"d":"2026-10-29","time":"10:34","sold":"FTNT","day":-0.2144,"price":136.76,"usd":7233.89,"bought":"ZS","buy_usd":7233.89}],"month":"2026-10","subs":{"FTNT":"ZS"},"banned":["FTNT"]}
+{"log":[{"d":"2026-10-29","time":"10:34","sold":"FTNT","day":-0.2144,"price":136.76,"usd":7233.89,"bought":"ZS","buy_usd":7233.89},{"d":"2026-10-30","time":"10:35","sold":"INTC","day":-0.2764,"price":66.62,"usd":7217.22,"bought":"LLY","buy_usd":7217.19}],"month":"2026-10","subs":{"FTNT":"ZS","INTC":"LLY"},"banned":["FTNT","INTC"]}
